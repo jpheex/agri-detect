@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="病蟲害辨識" />
+    <meta name="theme-color" content="#1b4332" />
     <title>農業病蟲害辨識系統</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="manifest" href="/static/manifest.webmanifest" />
+    <link rel="stylesheet" href="/static/styles.css?v={{APP_VERSION}}" />
   </head>
   <body>
     <header>
@@ -103,6 +106,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{APP_VERSION}}"></script>
   </body>
 </html>

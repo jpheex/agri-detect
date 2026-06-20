@@ -1,0 +1,9 @@
+{
+  "name": "農業病蟲害辨識系統",
+  "short_name": "病蟲害辨識",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1b4332",
+  "theme_color": "#1b4332",
+  "lang": "zh-Hant"
+}

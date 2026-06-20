@@ -23,7 +23,7 @@ from backend.database import (
     save_training_sample,
     verify_identification,
 )
-from backend.config import BASE_DIR, DATA_DIR
+from backend.config import APP_VERSION, BASE_DIR, DATA_DIR
 from backend.crop_disease_identifier import (
     CropDiseaseIdentifierError,
     identify_crop_disease_for_app,
@@ -55,6 +55,7 @@ def _image_url(image_path: str) -> str:
 # 部署環境可能回傳錯誤的 .js MIME type（例如 text/plain），這裡強制指定
 mimetypes.add_type("application/javascript", ".js", True)
 mimetypes.add_type("text/css", ".css", True)
+mimetypes.add_type("application/manifest+json", ".webmanifest", True)
 
 
 @asynccontextmanager
@@ -74,6 +75,17 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def disable_browser_cache(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path in {"/", "/sw.js", "/api/version"} or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def _save_upload(file: UploadFile, folder: Path) -> Path:
     suffix = Path(file.filename or "image.jpg").suffix.lower()
     if suffix not in ALLOWED_EXT:
@@ -88,6 +100,24 @@ def _save_upload(file: UploadFile, folder: Path) -> Path:
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "gemini": is_configured()}
+
+
+@app.get("/api/version")
+async def version():
+    return {"version": APP_VERSION}
+
+
+@app.get("/sw.js")
+async def service_worker():
+    sw_path = STATIC_DIR / "sw.js"
+    if not sw_path.exists():
+        raise HTTPException(status_code=404, detail="找不到 service worker")
+    body = sw_path.read_text(encoding="utf-8").replace("__APP_VERSION__", APP_VERSION)
+    return Response(
+        body,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -306,7 +336,8 @@ async def frontend_index():
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=500, detail="找不到前端 index.html")
-    return FileResponse(index_path)
+    html = index_path.read_text(encoding="utf-8").replace("{{APP_VERSION}}", APP_VERSION)
+    return Response(content=html, media_type="text/html")
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

@@ -45,9 +45,55 @@ const LS_IDENT = "agri_identifications";
 const LS_TRAIN = "agri_training";
 const LS_KNOWLEDGE = "agri_knowledge_entries";
 const LS_INDEX = "agri_knowledge_index";
+const LS_APP_VERSION = "agri_app_version";
 const MATCH_THRESHOLD = 0.82;
 
 let useLocal = false;
+
+async function clearAppCaches() {
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  }
+  if ("serviceWorker" in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((reg) => reg.unregister()));
+  }
+}
+
+async function registerServiceWorker(version) {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register(`/sw.js?v=${encodeURIComponent(version)}`, { scope: "/" });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function ensureLatestApp() {
+  try {
+    const res = await fetch("/api/version", { cache: "no-store" });
+    if (!res.ok) return;
+    const { version } = await res.json();
+    const stored = localStorage.getItem(LS_APP_VERSION);
+    if (stored && stored !== version) {
+      await clearAppCaches();
+      localStorage.setItem(LS_APP_VERSION, version);
+      const url = new URL(window.location.href);
+      url.searchParams.set("v", version);
+      window.location.replace(url.toString());
+      return;
+    }
+    localStorage.setItem(LS_APP_VERSION, version);
+    await registerServiceWorker(version);
+  } catch {
+    /* ignore */
+  }
+}
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) ensureLatestApp();
+});
 
 async function apiAvailable() {
   try {
@@ -802,6 +848,7 @@ async function loadVerifyPanel() {
 }
 
 (async () => {
+  await ensureLatestApp();
   useLocal = !(await apiAvailable());
   const notice = document.getElementById("identify-notice");
   if (useLocal) {
