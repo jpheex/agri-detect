@@ -666,6 +666,71 @@ textarea {
   border: 1px solid var(--border);
 }
 
+.offline-banner {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: #fef9c3;
+  border: 1px solid #fde047;
+  color: #854d0e;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.offline-self-check {
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px dashed #fcd34d;
+  border-radius: 12px;
+  background: #fffbeb;
+}
+
+.offline-self-check h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.offline-check-grid {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.offline-check-grid label,
+.offline-part-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.92rem;
+}
+
+.offline-part-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.offline-wifi-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
+.offline-rule-card {
+  margin-bottom: 0.85rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #fde047;
+  background: #fffbeb;
+}
+
+.offline-rule-card h4 {
+  margin: 0 0 0.35rem;
+}
+
 .weather-monitor-box {
   margin: 1rem 0;
   padding: 0.85rem;

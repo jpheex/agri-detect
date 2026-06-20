@@ -41,6 +41,8 @@ from backend.crop_disease_identifier import (
     is_configured,
 )
 from backend.disease_management_kb import MOCK_KNOWLEDGE, get_management_protocol
+from backend.offline_db import init_offline_db
+from backend.offline_router import router as offline_router
 from backend.weather_scheduler import run_weather_alert_job, start_weather_scheduler
 from backend.push_notifier import push_configured
 from backend.knowledge import (
@@ -77,6 +79,7 @@ async def lifespan(_: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
     await init_db()
+    await init_offline_db()
     scheduler = start_weather_scheduler()
     yield
     if scheduler:
@@ -84,6 +87,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="農業病蟲害辨識系統", lifespan=lifespan)
+app.include_router(offline_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

@@ -994,11 +994,45 @@ document.querySelectorAll(".organ-slot").forEach(setupOrganSlot);
 
 identifyBtn.addEventListener("click", async () => {
   if (identifyBtn.disabled || identifyInProgress || identifyCompleted) return;
+
+  const offlineMode =
+    (window.OfflineSync && OfflineSync.isBrowserOffline()) || useLocal;
+
   identifyInProgress = true;
   identifyBtn.disabled = true;
-  identifyBtn.textContent = "辨識中…";
+  identifyBtn.textContent = offlineMode ? "保存中…" : "辨識中…";
   setOrganInputsDisabled(true);
   identifyError.textContent = "";
+
+  if (offlineMode && window.OfflineSync) {
+    identifyResult.innerHTML = "<p class='muted'>離線模式：鎖存照片與 GPS…</p>";
+    try {
+      const crop = userCropInput?.value?.trim();
+      if (!crop) throw new Error("離線模式請填寫作物提示（例如：番茄）");
+      const selfCheck = OfflineSync.collectSelfCheckFromForm();
+      const loc = await requestFarmLocation();
+      const task = await OfflineSync.saveOfflineDiagnosticTask({
+        cropName: crop,
+        latitude: loc?.lat ?? 0,
+        longitude: loc?.lon ?? 0,
+        organFiles: identifyOrganFiles,
+        selfCheck,
+      });
+      identifyResult.innerHTML = OfflineSync.renderOfflineRuleCard(task.offline_rule_hint);
+      identifyError.textContent = `已鎖存任務 ${task.task_id.slice(0, 8)}…，連網後將自動上傳 AI 診斷。`;
+      setIdentifyCompletedMode(true);
+      OfflineSync.updateOfflineBanner();
+    } catch (err) {
+      identifyError.textContent = err.message;
+      identifyResult.innerHTML = "";
+      identifyInProgress = false;
+      identifyBtn.textContent = "保存紀錄並進行離線自檢";
+      setOrganInputsDisabled(false);
+      updateIdentifyButtonState();
+    }
+    return;
+  }
+
   identifyResult.innerHTML = "<p class='muted'>AI 多部位分析中...</p>";
   try {
     const data = await identifyPhotos(identifyOrganFiles, userCropInput?.value || "");
@@ -1283,4 +1317,6 @@ async function loadVerifyPanel() {
     /* ignore */
   }
   loadWeatherMonitors();
+  window.useLocal = useLocal;
+  window.OfflineSync?.updateOfflineBanner();
 })();

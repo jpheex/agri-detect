@@ -8,6 +8,8 @@ __pycache__/
 /data/app.db
 /data/training_manifest.json
 /data/weather_leaf_wetness.json
+/data/offline_queue.db
+/data/offline_sync_vault/
 
 # DVC 管理的訓練影像本體（由 data/training.dvc 追蹤）
 /data/training/

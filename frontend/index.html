@@ -45,6 +45,7 @@
       </nav>
 
       <section id="panel-identify" class="panel active">
+        <div id="offline-banner" class="offline-banner hidden"></div>
         <div class="notice" id="identify-notice">
           可分別拍攝<strong>葉子、花朵、枝條/樹幹</strong>（不必全部都有）。Gemini 會依部位特徵鏈辨識植物種類與病蟲害。
           若允許定位，系統會併入微氣象預警輔助診斷。
@@ -53,6 +54,28 @@
           <div>
             <label for="user-crop">作物提示（選填）</label>
             <input id="user-crop" name="user_crop" placeholder="例如：番茄、柑橘、蝴蝶蘭" />
+
+            <div id="offline-self-check" class="offline-self-check">
+              <h3>🩺 離線自主檢查（斷網時勾選）</h3>
+              <p class="muted">請勾選田間可見特徵，系統會立刻給出急救建議。</p>
+              <div class="offline-check-grid">
+                <label><input type="checkbox" id="chk-white-powder" /> 表面有白色粉末</label>
+                <label><input type="checkbox" id="chk-webbing" /> 有蜘蛛網狀細絲</label>
+                <label><input type="checkbox" id="chk-water-spots" /> 水浸狀暗色大斑</label>
+                <label><input type="checkbox" id="chk-gummosis" /> 流膠/樹幹腐爛</label>
+                <label><input type="checkbox" id="chk-after-rain" /> 下雨後才出現</label>
+              </div>
+              <p class="muted">受害部位：</p>
+              <div class="offline-part-row">
+                <label><input type="radio" name="offline-affected-part" value="leaves" checked /> 🍃 葉子</label>
+                <label><input type="radio" name="offline-affected-part" value="flowers" /> 🌸 花朵</label>
+                <label><input type="radio" name="offline-affected-part" value="stems_trunk" /> 🌿 枝條/樹幹</label>
+              </div>
+              <label class="offline-wifi-row">
+                <input type="checkbox" id="offline-wifi-only" /> 僅 Wi-Fi 下自動同步（省流量）
+              </label>
+              <button type="button" id="offline-sync-btn" class="btn btn-secondary hidden">同步離線任務</button>
+            </div>
 
             <div class="weather-monitor-box">
               <h3>🌦️ 微氣象主動預警</h3>
@@ -163,6 +186,7 @@
       </div>
     </footer>
 
+    <script src="/static/offline-sync.js?v={{APP_VERSION}}"></script>
     <script src="/static/app.js?v={{APP_VERSION}}"></script>
   </body>
 </html>

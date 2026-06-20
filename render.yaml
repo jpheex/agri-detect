@@ -25,5 +25,7 @@ services:
         value: "true"
       - key: WEATHER_CRON_HOURS
         value: "3"
+      - key: FCM_SERVER_KEY
+        sync: false
       - key: APP_VERSION
         sync: false
