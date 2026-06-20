@@ -1,3 +1,4 @@
+import mimetypes
 import shutil
 import uuid
 from contextlib import asynccontextmanager
@@ -42,6 +43,10 @@ TRAINING_DIR = DATA_DIR / "training"
 STATIC_DIR = BASE_DIR / "frontend"
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+
+# 部署環境可能回傳錯誤的 .js MIME type（例如 text/plain），這裡強制指定
+mimetypes.add_type("application/javascript", ".js", True)
+mimetypes.add_type("text/css", ".css", True)
 
 
 @asynccontextmanager
@@ -284,4 +289,12 @@ async def serve_file(folder: str, filename: str):
     return FileResponse(target)
 
 
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
+@app.get("/")
+async def frontend_index():
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=500, detail="找不到前端 index.html")
+    return FileResponse(index_path)
+
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
