@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>農業病蟲害辨識系統</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="container">
+        <h1>🌾 農業病蟲害辨識系統</h1>
+        <p>上傳照片辨識、累積訓練資料、驗收辨識成果</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="identify">照片辨識</button>
+        <button class="tab-btn" data-tab="training">預防訓練</button>
+        <button class="tab-btn" data-tab="verify">成果驗收</button>
+      </nav>
+
+      <section id="panel-identify" class="panel active">
+        <div class="notice" id="identify-notice">
+          上傳照片後，若已設定 Gemini API Key 會優先用 AI 辨識，並結合網站知識庫的治療/預防建議。
+        </div>
+        <div class="grid-2">
+          <div>
+            <div id="identify-dropzone" class="dropzone">
+              點擊或拖曳照片到此處
+              <div class="muted">支援 JPG、PNG、WEBP</div>
+            </div>
+            <input id="identify-input" type="file" accept="image/*" class="hidden" />
+            <img id="identify-preview" class="preview hidden" alt="預覽" />
+            <button id="identify-btn" class="btn btn-primary" disabled>開始辨識</button>
+            <div id="identify-error" class="error"></div>
+          </div>
+          <div id="identify-result"></div>
+        </div>
+      </section>
+
+      <section id="panel-training" class="panel">
+        <div class="notice">
+          上傳標註照片後會<strong>即時同步</strong>至辨識知識庫，供「照片辨識」比對使用。
+        </div>
+        <div id="knowledge-summary" class="knowledge-summary"></div>
+        <form id="training-form" class="grid-2">
+          <div>
+            <div id="training-dropzone" class="dropzone">
+              點擊或拖曳訓練照片到此
+            </div>
+            <input id="training-input" type="file" accept="image/*" class="hidden" />
+            <img id="training-preview" class="preview hidden" alt="訓練預覽" />
+          </div>
+          <div>
+            <label for="crop">農產品種類</label>
+            <input id="crop" name="crop" placeholder="例如：番茄" required />
+
+            <label for="issue_type">問題類型</label>
+            <select id="issue_type" name="issue_type" required>
+              <option value="病害">病害</option>
+              <option value="蟲害">蟲害</option>
+              <option value="健康">健康</option>
+            </select>
+
+            <label for="issue_name">病蟲害名稱</label>
+            <input id="issue_name" name="issue_name" placeholder="例如：晚疫病" required />
+
+            <label for="treatment">治療方式（選填）</label>
+            <textarea id="treatment" name="treatment" placeholder="留空則從知識庫自動補充"></textarea>
+
+            <label for="prevention">預防方式（選填）</label>
+            <textarea id="prevention" name="prevention" placeholder="留空則從知識庫自動補充"></textarea>
+
+            <label for="notes">備註（選填）</label>
+            <textarea id="notes" name="notes" placeholder="拍攝環境、症狀描述"></textarea>
+
+            <button type="submit" class="btn btn-primary">提交並同步知識庫</button>
+            <button type="button" id="export-btn" class="btn btn-secondary">匯出訓練清單 JSON</button>
+            <div id="training-error" class="error"></div>
+          </div>
+        </form>
+        <h3 style="margin-top: 1.5rem">已同步知識庫</h3>
+        <div id="knowledge-list" class="list"></div>
+        <h3 style="margin-top: 1.5rem">已收集樣本</h3>
+        <div id="training-list" class="list"></div>
+      </section>
+
+      <section id="panel-verify" class="panel">
+        <div id="stats" class="stats"></div>
+        <div id="verify-list" class="list"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
