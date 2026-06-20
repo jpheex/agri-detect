@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=5120"]
+  - repo: local
+    hooks:
+      - id: prevent-secrets
+        name: Prevent API keys and .env commits
+        entry: python scripts/prevent_secrets.py
+        language: system
+        types: [text]
+        pass_filenames: true
+        exclude: ^\.env\.example$

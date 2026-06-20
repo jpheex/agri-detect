@@ -1,4 +1,12 @@
 .env
-data/
 __pycache__/
 *.pyc
+
+# 執行時資料（不進 Git）
+/data/uploads/
+/data/preprocessed/
+/data/app.db
+/data/training_manifest.json
+
+# DVC 管理的訓練影像本體（由 data/training.dvc 追蹤）
+/data/training/

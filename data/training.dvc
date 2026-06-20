@@ -1,0 +1,6 @@
+outs:
+- md5: f01001eb1822cf721aeb9bab807ddafd.dir
+  size: 75
+  nfiles: 1
+  hash: md5
+  path: training

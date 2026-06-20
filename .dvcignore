@@ -1,0 +1,7 @@
+# Add patterns of files dvc should ignore, which could improve
+# the performance. Learn more at
+# https://dvc.org/doc/user-guide/dvcignore
+
+# 不追蹤執行時暫存/資料庫（由 Git ignore 控制也足夠，這裡再保守一次）
+**/*.db
+**/__pycache__/
