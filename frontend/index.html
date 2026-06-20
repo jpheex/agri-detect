@@ -55,26 +55,32 @@
             <label for="user-crop">作物提示（選填）</label>
             <input id="user-crop" name="user_crop" placeholder="例如：番茄、柑橘、蝴蝶蘭" />
 
-            <div id="offline-self-check" class="offline-self-check">
-              <h3>🩺 離線自主檢查（斷網時勾選）</h3>
-              <p class="muted">請勾選田間可見特徵，系統會立刻給出急救建議。</p>
-              <div class="offline-check-grid">
-                <label><input type="checkbox" id="chk-white-powder" /> 表面有白色粉末</label>
-                <label><input type="checkbox" id="chk-webbing" /> 有蜘蛛網狀細絲</label>
-                <label><input type="checkbox" id="chk-water-spots" /> 水浸狀暗色大斑</label>
-                <label><input type="checkbox" id="chk-gummosis" /> 流膠/樹幹腐爛</label>
-                <label><input type="checkbox" id="chk-after-rain" /> 下雨後才出現</label>
+            <div id="offline-panel" class="offline-panel">
+              <button type="button" id="offline-panel-toggle" class="offline-panel-toggle">
+                🩺 離線自主檢查（無網路時使用）
+              </button>
+              <div id="offline-panel-body" class="offline-panel-body">
+                <div id="offline-self-check" class="offline-self-check">
+                  <p class="muted">請勾選田間可見特徵，斷網時可立刻取得急救建議。</p>
+                  <div class="offline-check-grid">
+                    <label><input type="checkbox" id="chk-white-powder" /> 表面有白色粉末</label>
+                    <label><input type="checkbox" id="chk-webbing" /> 有蜘蛛網狀細絲</label>
+                    <label><input type="checkbox" id="chk-water-spots" /> 水浸狀暗色大斑</label>
+                    <label><input type="checkbox" id="chk-gummosis" /> 流膠／樹幹腐爛</label>
+                    <label><input type="checkbox" id="chk-after-rain" /> 下雨後才出現</label>
+                  </div>
+                  <p class="muted">受害部位：</p>
+                  <div class="offline-part-row">
+                    <label><input type="radio" name="offline-affected-part" value="leaves" checked /> 🍃 葉子</label>
+                    <label><input type="radio" name="offline-affected-part" value="flowers" /> 🌸 花朵</label>
+                    <label><input type="radio" name="offline-affected-part" value="stems_trunk" /> 🌿 枝條／樹幹</label>
+                  </div>
+                  <label class="offline-wifi-row">
+                    <input type="checkbox" id="offline-wifi-only" /> 僅 Wi-Fi 下自動同步（省流量）
+                  </label>
+                  <button type="button" id="offline-sync-btn" class="btn btn-secondary hidden">同步離線任務</button>
+                </div>
               </div>
-              <p class="muted">受害部位：</p>
-              <div class="offline-part-row">
-                <label><input type="radio" name="offline-affected-part" value="leaves" checked /> 🍃 葉子</label>
-                <label><input type="radio" name="offline-affected-part" value="flowers" /> 🌸 花朵</label>
-                <label><input type="radio" name="offline-affected-part" value="stems_trunk" /> 🌿 枝條/樹幹</label>
-              </div>
-              <label class="offline-wifi-row">
-                <input type="checkbox" id="offline-wifi-only" /> 僅 Wi-Fi 下自動同步（省流量）
-              </label>
-              <button type="button" id="offline-sync-btn" class="btn btn-secondary hidden">同步離線任務</button>
             </div>
 
             <div class="weather-monitor-box">

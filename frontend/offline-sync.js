@@ -137,6 +137,36 @@ function collectSelfCheckFromForm() {
   };
 }
 
+function setOfflinePanelExpanded(expanded) {
+  const panel = document.getElementById("offline-panel");
+  if (!panel) return;
+  panel.classList.toggle("is-expanded", expanded);
+}
+
+function updateOfflinePanelState() {
+  const panel = document.getElementById("offline-panel");
+  const toggle = document.getElementById("offline-panel-toggle");
+  if (!panel || !toggle) return;
+
+  const offline = isBrowserOffline() || window.useLocal === true;
+  const pending = readOfflineQueue().filter((t) => t.sync_status === "PENDING").length;
+
+  panel.classList.toggle("is-active", offline);
+
+  if (offline) {
+    setOfflinePanelExpanded(true);
+    toggle.textContent = "🩺 離線自主檢查（已啟用）";
+  } else {
+    if (!panel.dataset.userExpanded) {
+      setOfflinePanelExpanded(false);
+    }
+    toggle.textContent =
+      pending > 0
+        ? `🩺 離線自主檢查（${pending} 筆待同步）`
+        : "🩺 離線自主檢查（無網路時使用）";
+  }
+}
+
 function updateOfflineBanner() {
   const banner = document.getElementById("offline-banner");
   const identifyBtn = document.getElementById("identify-btn");
@@ -155,9 +185,11 @@ function updateOfflineBanner() {
   const pending = readOfflineQueue().filter((t) => t.sync_status === "PENDING").length;
   const syncBtn = document.getElementById("offline-sync-btn");
   if (syncBtn) {
-    syncBtn.classList.toggle("hidden", pending === 0 || offline);
-    syncBtn.textContent = `同步 ${pending} 筆離線任務`;
+    syncBtn.classList.toggle("hidden", pending === 0);
+    syncBtn.textContent = pending > 0 ? `同步 ${pending} 筆離線任務` : "同步離線任務";
   }
+
+  updateOfflinePanelState();
 }
 
 /**
@@ -299,6 +331,15 @@ function renderOfflineRuleCard(rule) {
 }
 
 function setupOfflineSyncUI() {
+  document.getElementById("offline-panel-toggle")?.addEventListener("click", () => {
+    const panel = document.getElementById("offline-panel");
+    if (!panel) return;
+    const next = !panel.classList.contains("is-expanded");
+    setOfflinePanelExpanded(next);
+    if (next) panel.dataset.userExpanded = "1";
+    else delete panel.dataset.userExpanded;
+  });
+
   window.addEventListener("online", () => {
     updateOfflineBanner();
     if (shouldSyncNow() && readOfflineQueue().some((t) => t.sync_status === "PENDING")) {
