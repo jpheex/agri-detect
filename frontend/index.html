@@ -27,20 +27,40 @@
 
       <section id="panel-identify" class="panel active">
         <div class="notice" id="identify-notice">
-          上傳照片後，若已設定 Gemini API Key 會優先用 AI 辨識，並結合網站知識庫的治療/預防建議。
+          可分別拍攝<strong>葉子、花朵、枝條/樹幹</strong>（不必全部都有）。Gemini 會依部位特徵鏈辨識植物種類與病蟲害。
         </div>
         <div class="grid-2">
           <div>
-            <div id="identify-dropzone" class="dropzone dropzone-camera">
-              📷 點擊拍照
-              <div class="muted">直接開啟相機拍攝</div>
+            <label for="user-crop">作物提示（選填）</label>
+            <input id="user-crop" name="user_crop" placeholder="例如：番茄、柑橘、蝴蝶蘭" />
+
+            <div class="organ-slots">
+              <div class="organ-slot" data-organ="leaves">
+                <div class="organ-slot-label">🍃 葉子</div>
+                <div class="organ-slot-dropzone" data-role="dropzone">點擊拍照</div>
+                <input type="file" accept="image/*" capture="environment" class="hidden organ-camera-input" />
+                <input type="file" accept="image/*" class="hidden organ-upload-input" />
+                <button type="button" class="btn btn-secondary btn-compact organ-upload-btn">上傳</button>
+                <img class="organ-preview hidden" alt="葉子預覽" />
+              </div>
+              <div class="organ-slot" data-organ="flowers">
+                <div class="organ-slot-label">🌸 花朵</div>
+                <div class="organ-slot-dropzone" data-role="dropzone">點擊拍照</div>
+                <input type="file" accept="image/*" capture="environment" class="hidden organ-camera-input" />
+                <input type="file" accept="image/*" class="hidden organ-upload-input" />
+                <button type="button" class="btn btn-secondary btn-compact organ-upload-btn">上傳</button>
+                <img class="organ-preview hidden" alt="花朵預覽" />
+              </div>
+              <div class="organ-slot" data-organ="stems_trunk">
+                <div class="organ-slot-label">🌿 枝條/樹幹</div>
+                <div class="organ-slot-dropzone" data-role="dropzone">點擊拍照</div>
+                <input type="file" accept="image/*" capture="environment" class="hidden organ-camera-input" />
+                <input type="file" accept="image/*" class="hidden organ-upload-input" />
+                <button type="button" class="btn btn-secondary btn-compact organ-upload-btn">上傳</button>
+                <img class="organ-preview hidden" alt="枝條預覽" />
+              </div>
             </div>
-            <input id="identify-camera-input" type="file" accept="image/*" capture="environment" class="hidden" />
-            <input id="identify-input" type="file" accept="image/*" class="hidden" />
-            <div class="actions">
-              <button type="button" id="identify-upload-btn" class="btn btn-secondary">上傳照片</button>
-            </div>
-            <img id="identify-preview" class="preview hidden" alt="預覽" />
+
             <button id="identify-btn" class="btn btn-primary" disabled>開始辨識</button>
             <div id="identify-error" class="error"></div>
           </div>

@@ -24,11 +24,15 @@ from backend.database import (
     verify_identification,
 )
 from backend.config import APP_VERSION, BASE_DIR, DATA_DIR
+from backend.plant_health_analyzer import (
+    PlantHealthAnalyzerError,
+    analyze_plant_health_for_app,
+)
 from backend.crop_disease_identifier import (
     CropDiseaseIdentifierError,
-    identify_crop_disease_for_app,
     is_configured,
 )
+from backend.disease_management_kb import MOCK_KNOWLEDGE, get_management_protocol
 from backend.knowledge import (
     image_vector,
     predict,
@@ -107,6 +111,27 @@ async def version():
     return {"version": APP_VERSION}
 
 
+@app.get("/api/management/lookup")
+async def management_lookup(disease_name: str, plant_name: str = ""):
+    """依病蟲害名稱查詢 IPM 防治協議（測試/前端擴充用）。"""
+    lookup = await get_management_protocol(disease_name, plant_name=plant_name or None)
+    return lookup.model_dump()
+
+
+@app.get("/api/management/catalog")
+async def management_catalog():
+    """列出知識庫收錄的所有病蟲害條目。"""
+    return [
+        {
+            "target_id": item.target_id,
+            "common_name": item.common_name,
+            "scientific_name": item.scientific_name,
+            "host_plants": item.host_plants,
+        }
+        for item in MOCK_KNOWLEDGE
+    ]
+
+
 @app.get("/sw.js")
 async def service_worker():
     sw_path = STATIC_DIR / "sw.js"
@@ -124,19 +149,26 @@ async def favicon():
     return Response(status_code=204)
 
 
-async def _run_identify(saved_paths: list[Path], user_notes: str = "") -> dict:
+async def _run_identify(
+    saved_paths: list[Path],
+    organ_labels: list[str] | None = None,
+    user_provided_crop: str = "",
+    user_notes: str = "",
+) -> dict:
     index_rows = await list_knowledge_index()
     knowledge_entries = await list_knowledge_entries()
 
     if is_configured():
         try:
-            result = await identify_crop_disease_for_app(
+            result = await analyze_plant_health_for_app(
                 [str(path) for path in saved_paths],
+                user_provided_crop=user_provided_crop or None,
+                organ_labels=organ_labels,
                 user_notes=user_notes or None,
                 knowledge_entries=knowledge_entries,
             )
             return result
-        except CropDiseaseIdentifierError:
+        except (PlantHealthAnalyzerError, CropDiseaseIdentifierError):
             pass
 
     # 後備：本機知識庫比對（僅用第一張影像）
@@ -147,14 +179,36 @@ async def _run_identify(saved_paths: list[Path], user_notes: str = "") -> dict:
 async def identify(
     file: UploadFile | None = File(None),
     files: list[UploadFile] = File(default=[]),
+    file_leaves: UploadFile | None = File(None),
+    file_flowers: UploadFile | None = File(None),
+    file_stems: UploadFile | None = File(None),
+    user_provided_crop: str = Form(""),
     user_notes: str = Form(""),
 ):
-    uploads = files if files else ([file] if file else [])
-    if not uploads:
-        raise HTTPException(status_code=400, detail="請上傳至少一張照片")
+    organ_uploads: list[tuple[str, UploadFile]] = []
+    if file_leaves and file_leaves.filename:
+        organ_uploads.append(("leaves", file_leaves))
+    if file_flowers and file_flowers.filename:
+        organ_uploads.append(("flowers", file_flowers))
+    if file_stems and file_stems.filename:
+        organ_uploads.append(("stems_trunk", file_stems))
 
-    saved_paths = [_save_upload(item, UPLOAD_DIR) for item in uploads]
-    result = await _run_identify(saved_paths, user_notes=user_notes.strip())
+    if organ_uploads:
+        saved_paths = [_save_upload(item, UPLOAD_DIR) for _, item in organ_uploads]
+        organ_labels = [label for label, _ in organ_uploads]
+    else:
+        uploads = files if files else ([file] if file else [])
+        if not uploads:
+            raise HTTPException(status_code=400, detail="請至少拍攝或上傳一張照片")
+        saved_paths = [_save_upload(item, UPLOAD_DIR) for item in uploads]
+        organ_labels = None
+
+    result = await _run_identify(
+        saved_paths,
+        organ_labels=organ_labels,
+        user_provided_crop=user_provided_crop.strip(),
+        user_notes=user_notes.strip(),
+    )
     primary = saved_paths[0]
     record_id = await save_identification(
         {

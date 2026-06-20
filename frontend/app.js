@@ -317,18 +317,82 @@ async function localPredict(file) {
   return { ...item, confidence: 0.52, source: "內建知識庫（低信心）" };
 }
 
+function renderIpmSections(data) {
+  const treatment = data.treatment_strategies;
+  const prevention = data.prevention_strategies;
+  if (!treatment && !prevention) return "";
+
+  const listItems = (items) =>
+    items?.length ? `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "<p class='muted'>無</p>";
+
+  const treatmentBlock = treatment
+    ? `<div class="ipm-block ipm-treatment">
+        <h4>🔴 治療方式（緊急處置）</h4>
+        <p class="ipm-subtitle">生物/天然資材</p>${listItems(treatment.biological_control)}
+        <p class="ipm-subtitle">安全化學防治</p>${listItems(treatment.chemical_control)}
+      </div>`
+    : "";
+
+  const preventionBlock = prevention
+    ? `<div class="ipm-block ipm-prevention">
+        <h4>🟢 預防方式（平日保養）</h4>
+        <p class="ipm-subtitle">栽培管理</p>${listItems(prevention.cultural_control)}
+        <p class="ipm-subtitle">物理防治</p>${listItems(prevention.physical_control)}
+      </div>`
+    : "";
+
+  const links =
+    data.extension_links?.length
+      ? `<div class="ipm-links"><strong>延伸資訊：</strong>${data.extension_links
+          .map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`)
+          .join(" · ")}</div>`
+      : "";
+
+  const matchInfo = data.management_match?.matched
+    ? `<p class="muted">IPM 知識庫命中：${escapeHtml(data.management_match.target_id)}（${Math.round((data.management_match.match_score || 0) * 100)}%）</p>`
+    : "";
+
+  const disclaimer = data.ipm_disclaimer
+    ? `<p class="ipm-disclaimer">${escapeHtml(data.ipm_disclaimer)}</p>`
+    : `<p class="ipm-disclaimer">本系統之藥劑推薦僅供參考，實際施藥請遵循台灣農業部最新公告之植物保護資訊系統規範，並嚴格遵守安全採收期。</p>`;
+
+  return `<div class="ipm-section">${matchInfo}${treatmentBlock}${preventionBlock}${links}${disclaimer}</div>`;
+}
+
 function renderResultCard(data, corrected = false) {
   const source = data.source ? `<span class="source-tag">${data.source}</span>` : "";
   const correctedTag = corrected ? `<div class="corrected-badge">已手動更正並同步知識庫</div>` : "";
+  const scientific = data.scientific_name
+    ? `<p><strong>學名：</strong><em>${escapeHtml(data.scientific_name)}</em></p>`
+    : "";
+  const healthNotice = renderHealthNotice(data);
+  const organBlock = renderOrganAnalysis(data.organ_analysis);
+  const reasoning = data.expert_reasoning
+    ? `<p><strong>專家推理：</strong>${escapeHtml(data.expert_reasoning)}</p>`
+    : "";
+  const photoFeedback = data.photo_feedback
+    ? `<p class="muted"><strong>拍攝回饋：</strong>${escapeHtml(data.photo_feedback)}</p>`
+    : "";
+  const ipmBlock = renderIpmSections(data);
+  const actionPlan =
+    data.action_plan && data.action_plan.length
+      ? `<p><strong>建議：</strong>${data.action_plan.map((item) => escapeHtml(item)).join("；")}</p>`
+      : "";
+
   return `
     <div class="result-card">
       <h3>辨識結果 ${source}</h3>
+      ${healthNotice}
       <p><span class="badge ${badgeClass(data.issue_type)}">${data.issue_type}</span>
       信心度 ${Math.round(data.confidence * 100)}%</p>
-      <p><strong>品種：</strong>${escapeHtml(data.crop)}</p>
-      <p><strong>問題：</strong>${escapeHtml(data.issue_name)}</p>
-      <p><strong>治療：</strong>${escapeHtml(data.treatment)}</p>
-      <p><strong>預防：</strong>${escapeHtml(data.prevention)}</p>
+      <p><strong>植物：</strong>${escapeHtml(data.crop)}</p>
+      ${scientific}
+      <p><strong>診斷：</strong>${escapeHtml(data.issue_name)}</p>
+      ${organBlock}
+      ${reasoning}
+      ${ipmBlock || `<p><strong>治療：</strong>${escapeHtml(data.treatment)}</p><p><strong>預防：</strong>${escapeHtml(data.prevention)}</p>`}
+      ${!ipmBlock && actionPlan ? actionPlan : ""}
+      ${photoFeedback}
       ${correctedTag}
     </div>`;
 }
@@ -355,6 +419,7 @@ function renderCorrectionForm(data) {
           <option value="病害" ${data.issue_type === "病害" ? "selected" : ""}>病害</option>
           <option value="蟲害" ${data.issue_type === "蟲害" ? "selected" : ""}>蟲害</option>
           <option value="健康" ${data.issue_type === "健康" ? "selected" : ""}>健康</option>
+          <option value="生理障礙" ${data.issue_type === "生理障礙" ? "selected" : ""}>生理障礙</option>
           <option value="待確認" ${data.issue_type === "待確認" ? "selected" : ""}>待確認</option>
         </select>
 
@@ -483,18 +548,28 @@ function showIdentifyResult(data, corrected = false) {
   bindIdentifyPanelEvents();
 }
 
-async function identifyPhoto(file) {
+async function identifyPhotos(organFiles, userCrop) {
   if (!useLocal) {
     const form = new FormData();
-    form.append("file", file);
+    const fieldMap = {
+      leaves: "file_leaves",
+      flowers: "file_flowers",
+      stems_trunk: "file_stems",
+    };
+    for (const [organ, file] of Object.entries(organFiles)) {
+      if (file) form.append(fieldMap[organ], file, file.name);
+    }
+    if (userCrop?.trim()) form.append("user_provided_crop", userCrop.trim());
     const res = await fetch("/api/identify", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "辨識失敗");
     return data;
   }
 
-  const image_url = await fileToDataUrl(file);
-  const pred = await localPredict(file);
+  const firstFile = Object.values(organFiles).find(Boolean);
+  if (!firstFile) throw new Error("請至少提供一張照片");
+  const image_url = await fileToDataUrl(firstFile);
+  const pred = await localPredict(firstFile);
   const items = readLocal(LS_IDENT);
   const id = items.length ? items[0].id + 1 : 1;
   const record = {
@@ -634,7 +709,40 @@ tabs.forEach((btn) => {
 function badgeClass(type) {
   if (type === "病害") return "badge-disease";
   if (type === "蟲害") return "badge-pest";
+  if (type === "生理障礙") return "badge-physio";
+  if (type === "健康") return "badge-ok";
   return "badge-unknown";
+}
+
+function renderOrganAnalysis(organAnalysis) {
+  if (!organAnalysis) return "";
+  const organs = [
+    ["leaves", "葉子"],
+    ["flowers", "花朵"],
+    ["stems_trunk", "枝條/樹幹"],
+  ];
+  const rows = organs
+    .map(([key, label]) => {
+      const item = organAnalysis[key];
+      if (!item) return "";
+      return `<div class="organ-result"><strong>${label}</strong>：${escapeHtml(item.observed_symptoms)}<br><span class="muted">疑似：${escapeHtml(item.suspected_issue)}</span></div>`;
+    })
+    .join("");
+  return rows ? `<div class="organ-results">${rows}</div>` : "";
+}
+
+function renderHealthNotice(data) {
+  const status = data.health_status || "";
+  if (status === "健康") {
+    return `<div class="health-light health-light-green">🟢 安全燈：植株<strong>健康</strong>，以下為平日保養建議。</div>`;
+  }
+  if (status === "疑似生理障礙") {
+    return `<div class="health-light health-light-yellow">🟡 注意燈：疑似<strong>生理障礙</strong>，請先檢視灌溉、施肥與環境，而非立即用藥。</div>`;
+  }
+  if (status === "受病害侵襲" || status === "受蟲害危害") {
+    return `<div class="health-light health-light-red">🔴 警報燈：已確診<strong>${escapeHtml(status)}</strong>，請優先執行下方緊急治療方式。</div>`;
+  }
+  return "";
 }
 
 function setupCameraDropzone(dropzone, cameraInput, onFile) {
@@ -653,46 +761,63 @@ function setupUploadButton(button, input, onFile) {
   });
 }
 
-let identifyFile = null;
-const identifyCameraInput = document.getElementById("identify-camera-input");
-const identifyInput = document.getElementById("identify-input");
-const identifyPreview = document.getElementById("identify-preview");
+const identifyOrganFiles = { leaves: null, flowers: null, stems_trunk: null };
 const identifyBtn = document.getElementById("identify-btn");
 const identifyError = document.getElementById("identify-error");
 const identifyResult = document.getElementById("identify-result");
+const userCropInput = document.getElementById("user-crop");
 
-function setIdentifyFile(file) {
-  identifyFile = file;
-  identifyPreview.src = URL.createObjectURL(file);
-  identifyPreview.classList.remove("hidden");
-  identifyBtn.disabled = false;
-  identifyError.textContent = "";
+function updateIdentifyButtonState() {
+  const hasAny = Object.values(identifyOrganFiles).some(Boolean);
+  identifyBtn.disabled = !hasAny;
 }
 
-setupCameraDropzone(
-  document.getElementById("identify-dropzone"),
-  identifyCameraInput,
-  setIdentifyFile
-);
-setupUploadButton(
-  document.getElementById("identify-upload-btn"),
-  identifyInput,
-  setIdentifyFile
-);
+function setOrganFile(organ, file, slotEl) {
+  identifyOrganFiles[organ] = file;
+  const preview = slotEl.querySelector(".organ-preview");
+  const dropzone = slotEl.querySelector('[data-role="dropzone"]');
+  preview.src = URL.createObjectURL(file);
+  preview.classList.remove("hidden");
+  dropzone.textContent = "已選擇，點擊重拍";
+  slotEl.classList.add("has-photo");
+  identifyError.textContent = "";
+  updateIdentifyButtonState();
+}
+
+function setupOrganSlot(slotEl) {
+  const organ = slotEl.dataset.organ;
+  const cameraInput = slotEl.querySelector(".organ-camera-input");
+  const uploadInput = slotEl.querySelector(".organ-upload-input");
+  const dropzone = slotEl.querySelector('[data-role="dropzone"]');
+  const uploadBtn = slotEl.querySelector(".organ-upload-btn");
+
+  dropzone.addEventListener("click", () => cameraInput.click());
+  uploadBtn.addEventListener("click", () => uploadInput.click());
+  cameraInput.addEventListener("change", () => {
+    if (cameraInput.files[0]) setOrganFile(organ, cameraInput.files[0], slotEl);
+    cameraInput.value = "";
+  });
+  uploadInput.addEventListener("change", () => {
+    if (uploadInput.files[0]) setOrganFile(organ, uploadInput.files[0], slotEl);
+    uploadInput.value = "";
+  });
+}
+
+document.querySelectorAll(".organ-slot").forEach(setupOrganSlot);
 
 identifyBtn.addEventListener("click", async () => {
-  if (!identifyFile) return;
+  if (identifyBtn.disabled) return;
   identifyBtn.disabled = true;
   identifyError.textContent = "";
-  identifyResult.innerHTML = "<p class='muted'>比對知識庫中...</p>";
+  identifyResult.innerHTML = "<p class='muted'>AI 多部位分析中...</p>";
   try {
-    const data = await identifyPhoto(identifyFile);
+    const data = await identifyPhotos(identifyOrganFiles, userCropInput?.value || "");
     showIdentifyResult(data);
   } catch (err) {
     identifyError.textContent = err.message;
     identifyResult.innerHTML = "";
   } finally {
-    identifyBtn.disabled = false;
+    updateIdentifyButtonState();
   }
 });
 
