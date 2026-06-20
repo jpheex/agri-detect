@@ -23,7 +23,7 @@ from backend.database import (
     save_training_sample,
     verify_identification,
 )
-from backend.config import APP_VERSION, BASE_DIR, DATA_DIR
+from backend.config import APP_VERSION, BASE_DIR, DATA_DIR, format_version_label
 from backend.plant_health_analyzer import (
     PlantHealthAnalyzerError,
     analyze_plant_health_for_app,
@@ -108,7 +108,7 @@ async def health():
 
 @app.get("/api/version")
 async def version():
-    return {"version": APP_VERSION}
+    return {"version": APP_VERSION, "label": format_version_label()}
 
 
 @app.get("/api/management/lookup")

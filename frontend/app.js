@@ -70,17 +70,26 @@ async function registerServiceWorker(version) {
   }
 }
 
-function renderAppVersion(version) {
+function formatVersionLabel(version) {
+  const raw = String(version ?? "").replace(/^v\s*/i, "").trim();
+  return raw ? `版本 v ${raw}` : "版本 v —";
+}
+
+function renderAppVersion(payload) {
   const el = document.getElementById("app-version");
-  if (el) el.textContent = `版本 ${version}`;
+  if (!el) return;
+  const label = typeof payload === "object" && payload?.label ? payload.label : null;
+  const version = typeof payload === "object" ? payload.version : payload;
+  el.textContent = label ? `版本 ${label}` : formatVersionLabel(version);
 }
 
 async function ensureLatestApp() {
   try {
     const res = await fetch("/api/version", { cache: "no-store" });
     if (!res.ok) return;
-    const { version } = await res.json();
-    renderAppVersion(version);
+    const payload = await res.json();
+    const version = payload.version;
+    renderAppVersion(payload);
     const stored = localStorage.getItem(LS_APP_VERSION);
     if (stored && stored !== version) {
       await clearAppCaches();
