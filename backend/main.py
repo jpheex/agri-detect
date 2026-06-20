@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import (
@@ -80,6 +80,10 @@ def _save_upload(file: UploadFile, folder: Path) -> Path:
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "gemini": is_configured()}
+
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
 
 
 async def _run_identify(saved_paths: list[Path], user_notes: str = "") -> dict:
