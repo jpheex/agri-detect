@@ -70,11 +70,17 @@ async function registerServiceWorker(version) {
   }
 }
 
+function renderAppVersion(version) {
+  const el = document.getElementById("app-version");
+  if (el) el.textContent = `版本 ${version}`;
+}
+
 async function ensureLatestApp() {
   try {
     const res = await fetch("/api/version", { cache: "no-store" });
     if (!res.ok) return;
     const { version } = await res.json();
+    renderAppVersion(version);
     const stored = localStorage.getItem(LS_APP_VERSION);
     if (stored && stored !== version) {
       await clearAppCaches();
