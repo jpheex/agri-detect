@@ -75,6 +75,44 @@ function fileToDataUrl(file) {
   });
 }
 
+function blobToFile(blob, filename) {
+  return new File([blob], filename, { type: blob.type || "image/jpeg" });
+}
+
+async function captureVideoFrameToBlob(videoEl, mimeType = "image/jpeg", quality = 0.9) {
+  const width = videoEl.videoWidth || 1280;
+  const height = videoEl.videoHeight || 720;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(videoEl, 0, 0, width, height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
+  if (!blob) throw new Error("拍照失敗，請重試");
+  return blob;
+}
+
+async function startCamera(videoEl) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("此瀏覽器不支援相機功能");
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" },
+    audio: false,
+  });
+  videoEl.srcObject = stream;
+  await videoEl.play();
+  return stream;
+}
+
+function stopCamera(videoEl) {
+  const stream = videoEl.srcObject;
+  if (stream && stream.getTracks) {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+  videoEl.srcObject = null;
+}
+
 function imageVectorFromDataUrl(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -606,6 +644,11 @@ const identifyPreview = document.getElementById("identify-preview");
 const identifyBtn = document.getElementById("identify-btn");
 const identifyError = document.getElementById("identify-error");
 const identifyResult = document.getElementById("identify-result");
+const identifyCam = document.getElementById("identify-camera");
+const identifyCamOpen = document.getElementById("identify-camera-open");
+const identifyCamShot = document.getElementById("identify-camera-shot");
+const identifyCamClose = document.getElementById("identify-camera-close");
+let identifyStream = null;
 
 setupDropzone(
   document.getElementById("identify-dropzone"),
@@ -615,10 +658,44 @@ setupDropzone(
     identifyFile = file;
     identifyPreview.src = URL.createObjectURL(file);
     identifyPreview.classList.remove("hidden");
+    identifyCam.classList.add("hidden");
     identifyBtn.disabled = false;
     identifyError.textContent = "";
   }
 );
+
+identifyCamOpen.addEventListener("click", async () => {
+  identifyError.textContent = "";
+  try {
+    identifyStream = await startCamera(identifyCam);
+    identifyCam.classList.remove("hidden");
+    identifyCamClose.classList.remove("hidden");
+    identifyCamShot.disabled = false;
+  } catch (err) {
+    identifyError.textContent = err.message;
+  }
+});
+
+identifyCamClose.addEventListener("click", () => {
+  stopCamera(identifyCam);
+  identifyStream = null;
+  identifyCam.classList.add("hidden");
+  identifyCamClose.classList.add("hidden");
+  identifyCamShot.disabled = true;
+});
+
+identifyCamShot.addEventListener("click", async () => {
+  identifyError.textContent = "";
+  try {
+    const blob = await captureVideoFrameToBlob(identifyCam);
+    identifyFile = blobToFile(blob, `identify_${Date.now()}.jpg`);
+    identifyPreview.src = URL.createObjectURL(identifyFile);
+    identifyPreview.classList.remove("hidden");
+    identifyBtn.disabled = false;
+  } catch (err) {
+    identifyError.textContent = err.message;
+  }
+});
 
 identifyBtn.addEventListener("click", async () => {
   if (!identifyFile) return;
@@ -640,6 +717,11 @@ let trainingFile = null;
 const trainingInput = document.getElementById("training-input");
 const trainingPreview = document.getElementById("training-preview");
 const trainingError = document.getElementById("training-error");
+const trainingCam = document.getElementById("training-camera");
+const trainingCamOpen = document.getElementById("training-camera-open");
+const trainingCamShot = document.getElementById("training-camera-shot");
+const trainingCamClose = document.getElementById("training-camera-close");
+let trainingStream = null;
 
 setupDropzone(
   document.getElementById("training-dropzone"),
@@ -649,9 +731,42 @@ setupDropzone(
     trainingFile = file;
     trainingPreview.src = URL.createObjectURL(file);
     trainingPreview.classList.remove("hidden");
+    trainingCam.classList.add("hidden");
     trainingError.textContent = "";
   }
 );
+
+trainingCamOpen.addEventListener("click", async () => {
+  trainingError.textContent = "";
+  try {
+    trainingStream = await startCamera(trainingCam);
+    trainingCam.classList.remove("hidden");
+    trainingCamClose.classList.remove("hidden");
+    trainingCamShot.disabled = false;
+  } catch (err) {
+    trainingError.textContent = err.message;
+  }
+});
+
+trainingCamClose.addEventListener("click", () => {
+  stopCamera(trainingCam);
+  trainingStream = null;
+  trainingCam.classList.add("hidden");
+  trainingCamClose.classList.add("hidden");
+  trainingCamShot.disabled = true;
+});
+
+trainingCamShot.addEventListener("click", async () => {
+  trainingError.textContent = "";
+  try {
+    const blob = await captureVideoFrameToBlob(trainingCam);
+    trainingFile = blobToFile(blob, `training_${Date.now()}.jpg`);
+    trainingPreview.src = URL.createObjectURL(trainingFile);
+    trainingPreview.classList.remove("hidden");
+  } catch (err) {
+    trainingError.textContent = err.message;
+  }
+});
 
 document.getElementById("training-form").addEventListener("submit", async (e) => {
   e.preventDefault();

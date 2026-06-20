@@ -117,6 +117,10 @@ header p {
   border: 1px solid var(--border);
 }
 
+video.preview {
+  background: #000;
+}
+
 label {
   display: block;
   font-weight: 600;
