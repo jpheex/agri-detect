@@ -662,9 +662,29 @@ function showIdentifyResult(data, corrected = false) {
 
 let farmLocation = null;
 
-function requestFarmLocation() {
+function formatCoordLabel(lat, lon) {
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  return `GPS ${Math.abs(lat).toFixed(4)}°${ns}, ${Math.abs(lon).toFixed(4)}°${ew}`;
+}
+
+async function reverseGeocodeLabel(lat, lon) {
+  try {
+    const res = await fetch(
+      `/api/geocode/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return formatCoordLabel(lat, lon);
+    const data = await res.json();
+    return data.label || formatCoordLabel(lat, lon);
+  } catch {
+    return formatCoordLabel(lat, lon);
+  }
+}
+
+function requestFarmLocation(forceRefresh = false) {
   return new Promise((resolve) => {
-    if (farmLocation) {
+    if (farmLocation && !forceRefresh) {
       resolve(farmLocation);
       return;
     }
@@ -673,14 +693,39 @@ function requestFarmLocation() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        farmLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const label = await reverseGeocodeLabel(lat, lon);
+        farmLocation = { lat, lon, label };
         resolve(farmLocation);
       },
       () => resolve(null),
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: forceRefresh ? 0 : 120000 }
     );
   });
+}
+
+async function autoFillMonitorLocation(forceRefresh = false) {
+  const input = document.getElementById("monitor-label");
+  const statusEl = document.getElementById("monitor-gps-status");
+  if (!input || useLocal) return;
+
+  if (statusEl) statusEl.textContent = "正在讀取 GPS…";
+  input.placeholder = "正在讀取 GPS 定位…";
+
+  const loc = await requestFarmLocation(forceRefresh);
+  if (!loc) {
+    input.placeholder = "無法取得定位，請允許位置權限";
+    if (statusEl) statusEl.textContent = "定位失敗";
+    return;
+  }
+
+  input.value = loc.label || formatCoordLabel(loc.lat, loc.lon);
+  input.placeholder = "可手動修改";
+  if (statusEl) {
+    statusEl.textContent = `已定位 ${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}`;
+  }
 }
 
 async function identifyPhotos(organFiles, userCrop) {
@@ -1116,26 +1161,35 @@ registerMonitorBtn?.addEventListener("click", async () => {
   registerMonitorBtn.disabled = true;
   registerMonitorBtn.textContent = "定位中…";
   try {
-    const loc = await requestFarmLocation();
+    const loc = farmLocation || (await requestFarmLocation());
     if (!loc) {
       throw new Error("無法取得定位，請允許瀏覽器使用位置");
+    }
+    if (monitorLabelInput && !monitorLabelInput.value.trim()) {
+      monitorLabelInput.value = loc.label || formatCoordLabel(loc.lat, loc.lon);
     }
     const form = new FormData();
     form.append("crop_name", crop);
     form.append("latitude", String(loc.lat));
     form.append("longitude", String(loc.lon));
-    if (monitorLabelInput?.value?.trim()) form.append("label", monitorLabelInput.value.trim());
+    const label = monitorLabelInput?.value?.trim() || loc.label || formatCoordLabel(loc.lat, loc.lon);
+    form.append("label", label);
     const res = await fetch("/api/weather/monitors", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "訂閱失敗");
-    if (monitorLabelInput) monitorLabelInput.value = "";
     await loadWeatherMonitors();
+    await autoFillMonitorLocation(true);
   } catch (err) {
     monitorErrorEl.textContent = err.message;
   } finally {
     registerMonitorBtn.disabled = false;
     registerMonitorBtn.textContent = "訂閱此位置預警";
   }
+});
+
+document.getElementById("refresh-monitor-gps-btn")?.addEventListener("click", () => {
+  farmLocation = null;
+  autoFillMonitorLocation(true);
 });
 
 let trainingFile = null;
@@ -1317,6 +1371,7 @@ async function loadVerifyPanel() {
     /* ignore */
   }
   loadWeatherMonitors();
+  autoFillMonitorLocation();
   window.useLocal = useLocal;
   window.OfflineSync?.updateOfflineBanner();
 })();

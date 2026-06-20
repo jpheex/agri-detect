@@ -80,8 +80,12 @@
             <div class="weather-monitor-box">
               <h3>🌦️ 微氣象主動預警</h3>
               <p class="muted">訂閱後系統每 3 小時掃描一次，高風險時推播至 LINE（需伺服器設定）。</p>
-              <label for="monitor-label">監測點名稱（選填）</label>
-              <input id="monitor-label" placeholder="例如：A 區溫室" />
+              <label for="monitor-label">監測點位置（GPS 自動填入）</label>
+              <div class="monitor-gps-row">
+                <input id="monitor-label" placeholder="正在讀取 GPS 定位…" />
+                <button type="button" id="refresh-monitor-gps-btn" class="btn btn-secondary btn-compact">重新定位</button>
+              </div>
+              <p id="monitor-gps-status" class="muted monitor-gps-status"></p>
               <button type="button" id="register-monitor-btn" class="btn btn-secondary">訂閱此位置預警</button>
               <div id="monitor-error" class="error"></div>
               <div id="monitor-list" class="monitor-list"></div>

@@ -731,6 +731,22 @@ textarea {
   margin: 0 0 0.35rem;
 }
 
+.monitor-gps-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.monitor-gps-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.monitor-gps-status {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.82rem;
+}
+
 .weather-monitor-box {
   margin: 1rem 0;
   padding: 0.85rem;

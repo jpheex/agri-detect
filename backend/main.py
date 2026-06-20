@@ -29,6 +29,7 @@ from backend.database import (
     save_training_sample,
     verify_identification,
 )
+from backend.geocode import reverse_geocode_label
 from backend.config import APP_VERSION, BASE_DIR, DATA_DIR, format_version_label
 from backend.agri_ai_orchestrator import evaluate_weather_risk, run_comprehensive_diagnostic
 from backend.agri_weather_ai import AgriWeatherAIEngine, format_weather_context_for_gemini
@@ -138,6 +139,15 @@ async def qrcode_image(url: str = Query(..., min_length=8, max_length=2048)):
     buf = BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.get("/api/geocode/reverse")
+async def geocode_reverse(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+):
+    """依 GPS 經緯度回傳繁中地名（監測點名稱自動填入用）。"""
+    return await reverse_geocode_label(lat, lon)
 
 
 @app.get("/api/weather/risk")
