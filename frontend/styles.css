@@ -35,6 +35,19 @@ header {
   padding-top: calc(1.5rem + env(safe-area-inset-top));
 }
 
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.header-text {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
 header h1 {
   margin: 0 0 0.35rem;
   font-size: 1.6rem;
@@ -43,6 +56,85 @@ header h1 {
 header p {
   margin: 0;
   opacity: 0.9;
+}
+
+.btn-header-qr {
+  margin-top: 0;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+}
+
+.btn-header-qr:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 360px);
+  background: var(--card);
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+
+.modal-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.2rem;
+}
+
+.qr-image-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0 0.75rem;
+}
+
+.qr-image-wrap img {
+  width: 240px;
+  height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.qr-share-url {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  word-break: break-all;
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.modal-actions .btn {
+  flex: 1 1 120px;
+  margin-top: 0;
 }
 
 .container {
@@ -198,6 +290,16 @@ textarea {
   font-weight: 700;
   min-height: 44px;
   touch-action: manipulation;
+}
+
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#identify-reset-btn {
+  width: 100%;
 }
 
 .btn-primary {
@@ -547,8 +649,13 @@ textarea {
   word-break: break-all;
 }
 
-.ipm-links a {
+.ipm-links a,
+.ipm-links .ext-link {
   color: var(--green-700);
+  text-decoration: underline;
+  cursor: pointer;
+  pointer-events: auto;
+  word-break: break-all;
 }
 
 .health-light {

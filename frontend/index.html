@@ -12,11 +12,30 @@
   </head>
   <body>
     <header>
-      <div class="container">
-        <h1>🌾 農業病蟲害辨識系統</h1>
-        <p>上傳照片辨識、累積訓練資料、驗收辨識成果</p>
+      <div class="container header-row">
+        <div class="header-text">
+          <h1>🌾 農業病蟲害辨識系統</h1>
+          <p>上傳照片辨識、累積訓練資料、驗收辨識成果</p>
+        </div>
+        <button type="button" id="share-qr-btn" class="btn btn-header-qr" aria-haspopup="dialog">📱 分享 QR Code</button>
       </div>
     </header>
+
+    <div id="qr-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
+      <div class="modal-backdrop" data-close-modal="qr"></div>
+      <div class="modal-card">
+        <h2 id="qr-modal-title">掃碼使用本系統</h2>
+        <p class="muted">請其他使用者以手機相機或掃碼 App 掃描下方 QR Code</p>
+        <div id="qr-image-wrap" class="qr-image-wrap">
+          <img id="qr-image" alt="分享連結 QR Code" width="240" height="240" />
+        </div>
+        <p id="qr-share-url" class="qr-share-url"></p>
+        <div class="modal-actions">
+          <button type="button" id="qr-copy-btn" class="btn btn-secondary">複製連結</button>
+          <button type="button" id="qr-modal-close" class="btn btn-primary" data-close-modal="qr">關閉</button>
+        </div>
+      </div>
+    </div>
 
     <main class="container">
       <nav class="tabs">
@@ -62,6 +81,7 @@
             </div>
 
             <button id="identify-btn" class="btn btn-primary" disabled>開始辨識</button>
+            <button type="button" id="identify-reset-btn" class="btn btn-secondary hidden">辨識其他植物</button>
             <div id="identify-error" class="error"></div>
           </div>
           <div id="identify-result"></div>

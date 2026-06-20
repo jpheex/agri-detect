@@ -4,7 +4,10 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from io import BytesIO
+
+import qrcode
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -109,6 +112,18 @@ async def health():
 @app.get("/api/version")
 async def version():
     return {"version": APP_VERSION, "label": format_version_label()}
+
+
+@app.get("/api/qrcode")
+async def qrcode_image(url: str = Query(..., min_length=8, max_length=2048)):
+    """產生分享連結 QR Code PNG。"""
+    target = url.strip()
+    if not target.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="url 必須為 http 或 https")
+    img = qrcode.make(target, box_size=8, border=2)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @app.get("/api/management/lookup")

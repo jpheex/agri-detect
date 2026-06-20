@@ -110,6 +110,61 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted) ensureLatestApp();
 });
 
+function getShareUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("v");
+  url.hash = "";
+  let path = url.pathname.replace(/\/+$/, "");
+  if (!path) path = "";
+  return `${url.origin}${path}`;
+}
+
+function setupShareQrModal() {
+  const shareBtn = document.getElementById("share-qr-btn");
+  const modal = document.getElementById("qr-modal");
+  const qrImage = document.getElementById("qr-image");
+  const shareUrlEl = document.getElementById("qr-share-url");
+  const copyBtn = document.getElementById("qr-copy-btn");
+  if (!shareBtn || !modal || !qrImage || !shareUrlEl) return;
+
+  const closeModal = () => {
+    modal.classList.add("hidden");
+    document.body.style.overflow = "";
+  };
+
+  const openModal = () => {
+    const shareUrl = getShareUrl();
+    shareUrlEl.textContent = shareUrl;
+    qrImage.src = `/api/qrcode?url=${encodeURIComponent(shareUrl)}&t=${Date.now()}`;
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  };
+
+  shareBtn.addEventListener("click", openModal);
+  modal.querySelectorAll("[data-close-modal='qr']").forEach((el) => {
+    el.addEventListener("click", closeModal);
+  });
+
+  copyBtn?.addEventListener("click", async () => {
+    const text = getShareUrl();
+    try {
+      await navigator.clipboard.writeText(text);
+      copyBtn.textContent = "已複製";
+      setTimeout(() => {
+        copyBtn.textContent = "複製連結";
+      }, 1500);
+    } catch {
+      window.prompt("請手動複製連結", text);
+    }
+  });
+
+  modal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeModal();
+  });
+}
+
+setupShareQrModal();
+
 async function apiAvailable() {
   try {
     const res = await fetch("/api/health", { method: "GET" });
@@ -353,7 +408,11 @@ function renderIpmSections(data) {
   const links =
     data.extension_links?.length
       ? `<div class="ipm-links"><strong>延伸資訊：</strong>${data.extension_links
-          .map((url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`)
+          .map((raw) => {
+            const href = safeExternalUrl(raw);
+            if (!href) return `<span class="muted">${escapeHtml(raw)}</span>`;
+            return `<a class="ext-link" href="${href}" target="_blank" rel="noopener noreferrer">${escapeHtml(href)}</a>`;
+          })
           .join(" · ")}</div>`
       : "";
 
@@ -412,6 +471,16 @@ function escapeHtml(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function safeExternalUrl(url) {
+  try {
+    const parsed = new URL(String(url).trim());
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 function renderCorrectionForm(data) {
@@ -772,13 +841,60 @@ function setupUploadButton(button, input, onFile) {
 
 const identifyOrganFiles = { leaves: null, flowers: null, stems_trunk: null };
 const identifyBtn = document.getElementById("identify-btn");
+const identifyResetBtn = document.getElementById("identify-reset-btn");
 const identifyError = document.getElementById("identify-error");
 const identifyResult = document.getElementById("identify-result");
 const userCropInput = document.getElementById("user-crop");
+let identifyInProgress = false;
+let identifyCompleted = false;
+
+function setOrganInputsDisabled(disabled) {
+  document.querySelectorAll(".organ-slot").forEach((slot) => {
+    slot.querySelector(".organ-camera-input").disabled = disabled;
+    slot.querySelector(".organ-upload-input").disabled = disabled;
+    slot.querySelector(".organ-upload-btn").disabled = disabled;
+    slot.querySelector('[data-role="dropzone"]').style.pointerEvents = disabled ? "none" : "";
+    slot.style.opacity = disabled ? "0.65" : "";
+  });
+  if (userCropInput) userCropInput.disabled = disabled;
+}
 
 function updateIdentifyButtonState() {
+  if (identifyInProgress || identifyCompleted) {
+    identifyBtn.disabled = true;
+    return;
+  }
   const hasAny = Object.values(identifyOrganFiles).some(Boolean);
   identifyBtn.disabled = !hasAny;
+}
+
+function setIdentifyCompletedMode(completed) {
+  identifyCompleted = completed;
+  identifyResetBtn.classList.toggle("hidden", !completed);
+  identifyBtn.classList.toggle("hidden", completed);
+  setOrganInputsDisabled(completed);
+  updateIdentifyButtonState();
+}
+
+function resetIdentifyPanel() {
+  Object.keys(identifyOrganFiles).forEach((key) => {
+    identifyOrganFiles[key] = null;
+  });
+  document.querySelectorAll(".organ-slot").forEach((slot) => {
+    const preview = slot.querySelector(".organ-preview");
+    preview.src = "";
+    preview.classList.add("hidden");
+    slot.querySelector('[data-role="dropzone"]').textContent = "點擊拍照";
+    slot.classList.remove("has-photo");
+  });
+  if (userCropInput) userCropInput.value = "";
+  identifyResult.innerHTML = "";
+  identifyError.textContent = "";
+  lastIdentifyData = null;
+  identifyInProgress = false;
+  identifyBtn.textContent = "開始辨識";
+  setIdentifyCompletedMode(false);
+  setOrganInputsDisabled(false);
 }
 
 function setOrganFile(organ, file, slotEl) {
@@ -815,20 +931,28 @@ function setupOrganSlot(slotEl) {
 document.querySelectorAll(".organ-slot").forEach(setupOrganSlot);
 
 identifyBtn.addEventListener("click", async () => {
-  if (identifyBtn.disabled) return;
+  if (identifyBtn.disabled || identifyInProgress || identifyCompleted) return;
+  identifyInProgress = true;
   identifyBtn.disabled = true;
+  identifyBtn.textContent = "辨識中…";
+  setOrganInputsDisabled(true);
   identifyError.textContent = "";
   identifyResult.innerHTML = "<p class='muted'>AI 多部位分析中...</p>";
   try {
     const data = await identifyPhotos(identifyOrganFiles, userCropInput?.value || "");
     showIdentifyResult(data);
+    setIdentifyCompletedMode(true);
   } catch (err) {
     identifyError.textContent = err.message;
     identifyResult.innerHTML = "";
-  } finally {
+    identifyInProgress = false;
+    identifyBtn.textContent = "開始辨識";
+    setOrganInputsDisabled(false);
     updateIdentifyButtonState();
   }
 });
+
+identifyResetBtn.addEventListener("click", resetIdentifyPanel);
 
 let trainingFile = null;
 const trainingCameraInput = document.getElementById("training-camera-input");
