@@ -44,6 +44,14 @@ STATIC_DIR = BASE_DIR / "frontend"
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
+
+def _image_url(image_path: str) -> str:
+    path = Path(image_path)
+    if not path.is_absolute():
+        path = (BASE_DIR / path).resolve()
+    rel = path.relative_to(DATA_DIR.resolve())
+    return f"/files/{rel.as_posix()}"
+
 # 部署環境可能回傳錯誤的 .js MIME type（例如 text/plain），這裡強制指定
 mimetypes.add_type("application/javascript", ".js", True)
 mimetypes.add_type("text/css", ".css", True)
@@ -126,7 +134,7 @@ async def identify(
             }},
         }
     )
-    image_urls = [f"/files/{path.relative_to(DATA_DIR)}" for path in saved_paths]
+    image_urls = [_image_url(str(path)) for path in saved_paths]
     return {
         "id": record_id,
         "image_url": image_urls[0],
@@ -139,7 +147,7 @@ async def identify(
 async def identifications(limit: int = 50):
     items = await list_identifications(limit=limit)
     for item in items:
-        item["image_url"] = f"/files/{Path(item['image_path']).relative_to(DATA_DIR)}"
+        item["image_url"] = _image_url(item["image_path"])
     return items
 
 
@@ -259,7 +267,7 @@ async def add_training_sample(
     meta = await get_knowledge_stats()
     return {
         "id": record_id,
-        "image_url": f"/files/{saved.relative_to(DATA_DIR)}",
+        "image_url": _image_url(str(saved)),
         "message": f"已同步至辨識知識庫（共 {meta['entries']} 類、{meta['indexed_images']} 張參考圖）",
         **meta,
     }
@@ -269,7 +277,7 @@ async def add_training_sample(
 async def training_samples(limit: int = 100):
     items = await list_training_samples(limit=limit)
     for item in items:
-        item["image_url"] = f"/files/{Path(item['image_path']).relative_to(DATA_DIR)}"
+        item["image_url"] = _image_url(item["image_path"])
     return items
 
 

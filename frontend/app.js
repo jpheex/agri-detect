@@ -75,44 +75,6 @@ function fileToDataUrl(file) {
   });
 }
 
-function blobToFile(blob, filename) {
-  return new File([blob], filename, { type: blob.type || "image/jpeg" });
-}
-
-async function captureVideoFrameToBlob(videoEl, mimeType = "image/jpeg", quality = 0.9) {
-  const width = videoEl.videoWidth || 1280;
-  const height = videoEl.videoHeight || 720;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(videoEl, 0, 0, width, height);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, mimeType, quality));
-  if (!blob) throw new Error("拍照失敗，請重試");
-  return blob;
-}
-
-async function startCamera(videoEl) {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("此瀏覽器不支援相機功能");
-  }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" },
-    audio: false,
-  });
-  videoEl.srcObject = stream;
-  await videoEl.play();
-  return stream;
-}
-
-function stopCamera(videoEl) {
-  const stream = videoEl.srcObject;
-  if (stream && stream.getTracks) {
-    stream.getTracks().forEach((t) => t.stop());
-  }
-  videoEl.srcObject = null;
-}
-
 function imageVectorFromDataUrl(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -543,6 +505,9 @@ async function fetchKnowledge() {
 async function fetchIdentifications() {
   if (!useLocal) {
     const res = await fetch("/api/identifications");
+    if (!res.ok) {
+      throw new Error(`載入辨識紀錄失敗 (${res.status})`);
+    }
     return res.json();
   }
   return readLocal(LS_IDENT);
@@ -620,82 +585,48 @@ function badgeClass(type) {
   return "badge-unknown";
 }
 
-function setupDropzone(dropzone, input, preview, onFile) {
-  dropzone.addEventListener("click", () => input.click());
-  dropzone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropzone.classList.add("dragover");
+function setupCameraDropzone(dropzone, cameraInput, onFile) {
+  dropzone.addEventListener("click", () => cameraInput.click());
+  cameraInput.addEventListener("change", () => {
+    if (cameraInput.files[0]) onFile(cameraInput.files[0]);
+    cameraInput.value = "";
   });
-  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
-  dropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-    const file = e.dataTransfer.files[0];
-    if (file) onFile(file);
-  });
+}
+
+function setupUploadButton(button, input, onFile) {
+  button.addEventListener("click", () => input.click());
   input.addEventListener("change", () => {
     if (input.files[0]) onFile(input.files[0]);
+    input.value = "";
   });
 }
 
 let identifyFile = null;
+const identifyCameraInput = document.getElementById("identify-camera-input");
 const identifyInput = document.getElementById("identify-input");
 const identifyPreview = document.getElementById("identify-preview");
 const identifyBtn = document.getElementById("identify-btn");
 const identifyError = document.getElementById("identify-error");
 const identifyResult = document.getElementById("identify-result");
-const identifyCam = document.getElementById("identify-camera");
-const identifyCamOpen = document.getElementById("identify-camera-open");
-const identifyCamShot = document.getElementById("identify-camera-shot");
-const identifyCamClose = document.getElementById("identify-camera-close");
-let identifyStream = null;
 
-setupDropzone(
+function setIdentifyFile(file) {
+  identifyFile = file;
+  identifyPreview.src = URL.createObjectURL(file);
+  identifyPreview.classList.remove("hidden");
+  identifyBtn.disabled = false;
+  identifyError.textContent = "";
+}
+
+setupCameraDropzone(
   document.getElementById("identify-dropzone"),
-  identifyInput,
-  identifyPreview,
-  (file) => {
-    identifyFile = file;
-    identifyPreview.src = URL.createObjectURL(file);
-    identifyPreview.classList.remove("hidden");
-    identifyCam.classList.add("hidden");
-    identifyBtn.disabled = false;
-    identifyError.textContent = "";
-  }
+  identifyCameraInput,
+  setIdentifyFile
 );
-
-identifyCamOpen.addEventListener("click", async () => {
-  identifyError.textContent = "";
-  try {
-    identifyStream = await startCamera(identifyCam);
-    identifyCam.classList.remove("hidden");
-    identifyCamClose.classList.remove("hidden");
-    identifyCamShot.disabled = false;
-  } catch (err) {
-    identifyError.textContent = err.message;
-  }
-});
-
-identifyCamClose.addEventListener("click", () => {
-  stopCamera(identifyCam);
-  identifyStream = null;
-  identifyCam.classList.add("hidden");
-  identifyCamClose.classList.add("hidden");
-  identifyCamShot.disabled = true;
-});
-
-identifyCamShot.addEventListener("click", async () => {
-  identifyError.textContent = "";
-  try {
-    const blob = await captureVideoFrameToBlob(identifyCam);
-    identifyFile = blobToFile(blob, `identify_${Date.now()}.jpg`);
-    identifyPreview.src = URL.createObjectURL(identifyFile);
-    identifyPreview.classList.remove("hidden");
-    identifyBtn.disabled = false;
-  } catch (err) {
-    identifyError.textContent = err.message;
-  }
-});
+setupUploadButton(
+  document.getElementById("identify-upload-btn"),
+  identifyInput,
+  setIdentifyFile
+);
 
 identifyBtn.addEventListener("click", async () => {
   if (!identifyFile) return;
@@ -714,59 +645,28 @@ identifyBtn.addEventListener("click", async () => {
 });
 
 let trainingFile = null;
+const trainingCameraInput = document.getElementById("training-camera-input");
 const trainingInput = document.getElementById("training-input");
 const trainingPreview = document.getElementById("training-preview");
 const trainingError = document.getElementById("training-error");
-const trainingCam = document.getElementById("training-camera");
-const trainingCamOpen = document.getElementById("training-camera-open");
-const trainingCamShot = document.getElementById("training-camera-shot");
-const trainingCamClose = document.getElementById("training-camera-close");
-let trainingStream = null;
 
-setupDropzone(
+function setTrainingFile(file) {
+  trainingFile = file;
+  trainingPreview.src = URL.createObjectURL(file);
+  trainingPreview.classList.remove("hidden");
+  trainingError.textContent = "";
+}
+
+setupCameraDropzone(
   document.getElementById("training-dropzone"),
-  trainingInput,
-  trainingPreview,
-  (file) => {
-    trainingFile = file;
-    trainingPreview.src = URL.createObjectURL(file);
-    trainingPreview.classList.remove("hidden");
-    trainingCam.classList.add("hidden");
-    trainingError.textContent = "";
-  }
+  trainingCameraInput,
+  setTrainingFile
 );
-
-trainingCamOpen.addEventListener("click", async () => {
-  trainingError.textContent = "";
-  try {
-    trainingStream = await startCamera(trainingCam);
-    trainingCam.classList.remove("hidden");
-    trainingCamClose.classList.remove("hidden");
-    trainingCamShot.disabled = false;
-  } catch (err) {
-    trainingError.textContent = err.message;
-  }
-});
-
-trainingCamClose.addEventListener("click", () => {
-  stopCamera(trainingCam);
-  trainingStream = null;
-  trainingCam.classList.add("hidden");
-  trainingCamClose.classList.add("hidden");
-  trainingCamShot.disabled = true;
-});
-
-trainingCamShot.addEventListener("click", async () => {
-  trainingError.textContent = "";
-  try {
-    const blob = await captureVideoFrameToBlob(trainingCam);
-    trainingFile = blobToFile(blob, `training_${Date.now()}.jpg`);
-    trainingPreview.src = URL.createObjectURL(trainingFile);
-    trainingPreview.classList.remove("hidden");
-  } catch (err) {
-    trainingError.textContent = err.message;
-  }
-});
+setupUploadButton(
+  document.getElementById("training-upload-btn"),
+  trainingInput,
+  setTrainingFile
+);
 
 document.getElementById("training-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -848,9 +748,10 @@ async function loadTrainingPanel() {
 async function loadVerifyPanel() {
   const statsEl = document.getElementById("stats");
   const listEl = document.getElementById("verify-list");
-  const [stats, items] = await Promise.all([fetchStats(), fetchIdentifications()]);
+  try {
+    const [stats, items] = await Promise.all([fetchStats(), fetchIdentifications()]);
 
-  statsEl.innerHTML = `
+    statsEl.innerHTML = `
     <div class="stat-box"><strong>${stats.total}</strong>總辨識數</div>
     <div class="stat-box"><strong>${stats.correct}</strong>正確</div>
     <div class="stat-box"><strong>${stats.incorrect}</strong>錯誤</div>
@@ -858,23 +759,23 @@ async function loadVerifyPanel() {
     <div class="stat-box"><strong>${stats.entries ?? 0}</strong>知識類別</div>
     <div class="stat-box"><strong>${stats.indexed_images ?? 0}</strong>參考影像</div>`;
 
-  if (!items.length) {
-    listEl.innerHTML = "<p class='muted'>尚無辨識紀錄</p>";
-    return;
-  }
+    if (!items.length) {
+      listEl.innerHTML = "<p class='muted'>尚無辨識紀錄</p>";
+      return;
+    }
 
-  listEl.innerHTML = items
-    .map((item) => {
-      const status =
-        item.verified === 1
-          ? "<span class='muted'>已標記：正確（已同步知識庫）</span>"
-          : item.verified === 0
-            ? "<span class='muted'>已標記：錯誤</span>"
-            : `<div class="actions">
+    listEl.innerHTML = items
+      .map((item) => {
+        const status =
+          item.verified === 1
+            ? "<span class='muted'>已標記：正確（已同步知識庫）</span>"
+            : item.verified === 0
+              ? "<span class='muted'>已標記：錯誤</span>"
+              : `<div class="actions">
                 <button class="btn btn-ok" data-id="${item.id}" data-correct="true">正確</button>
                 <button class="btn btn-danger" data-id="${item.id}" data-correct="false">錯誤</button>
               </div>`;
-      return `
+        return `
         <div class="list-item">
           <img src="${item.image_url}" alt="${item.crop}" />
           <div>
@@ -885,15 +786,19 @@ async function loadVerifyPanel() {
           </div>
           ${status}
         </div>`;
-    })
-    .join("");
+      })
+      .join("");
 
-  listEl.querySelectorAll("button[data-id]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await verifyRecord(Number(btn.dataset.id), btn.dataset.correct === "true");
-      loadVerifyPanel();
+    listEl.querySelectorAll("button[data-id]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await verifyRecord(Number(btn.dataset.id), btn.dataset.correct === "true");
+        loadVerifyPanel();
+      });
     });
-  });
+  } catch (err) {
+    statsEl.innerHTML = "";
+    listEl.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+  }
 }
 
 (async () => {

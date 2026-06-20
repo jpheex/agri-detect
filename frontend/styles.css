@@ -23,12 +23,16 @@ body {
   background: linear-gradient(180deg, #edf7ef 0%, var(--bg) 40%);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-tap-highlight-color: transparent;
 }
 
 header {
   background: var(--green-900);
   color: #fff;
   padding: 1.5rem 1rem 1rem;
+  padding-top: calc(1.5rem + env(safe-area-inset-top));
 }
 
 header h1 {
@@ -62,6 +66,8 @@ header p {
   border-radius: 999px;
   cursor: pointer;
   font-weight: 600;
+  flex: 1 1 auto;
+  min-height: 44px;
 }
 
 .tab-btn.active {
@@ -93,6 +99,28 @@ header p {
   .grid-2 {
     grid-template-columns: 1fr;
   }
+
+  .container {
+    padding: 0.75rem;
+  }
+
+  header h1 {
+    font-size: 1.35rem;
+  }
+
+  .panel {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .tabs {
+    gap: 0.35rem;
+  }
+
+  .tab-btn {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.95rem;
+  }
 }
 
 .dropzone {
@@ -102,6 +130,18 @@ header p {
   text-align: center;
   background: var(--green-100);
   cursor: pointer;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  touch-action: manipulation;
+}
+
+.dropzone-camera {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--green-900);
 }
 
 .dropzone.dragover {
@@ -141,6 +181,7 @@ textarea {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 10px;
+  font-size: 16px;
 }
 
 textarea {
@@ -155,6 +196,8 @@ textarea {
   padding: 0.75rem 1rem;
   cursor: pointer;
   font-weight: 700;
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
 .btn-primary {
@@ -271,6 +314,20 @@ textarea {
     width: 100%;
     height: 180px;
   }
+
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .knowledge-summary {
+    grid-template-columns: 1fr;
+  }
+
+  #identify-btn,
+  .actions .btn,
+  button[type="submit"].btn {
+    width: 100%;
+  }
 }
 
 .muted {
@@ -282,6 +339,10 @@ textarea {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.actions .btn {
+  flex: 1 1 140px;
 }
 
 .notice {
