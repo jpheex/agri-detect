@@ -427,6 +427,38 @@ function renderIpmSections(data) {
   return `<div class="ipm-section">${matchInfo}${treatmentBlock}${preventionBlock}${links}${disclaimer}</div>`;
 }
 
+function renderWeatherWarning(data) {
+  const report = data.agri_weather_ai_proactive_warning;
+  if (!report?.risk_assessments?.length) return "";
+
+  const w = report.current_weather || {};
+  const weatherMeta = `
+    <p class="muted weather-meta">
+      微氣象：${escapeHtml(w.temperature ?? "—")}°C · 濕度 ${escapeHtml(w.humidity ?? "—")}% ·
+      24h 雨量 ${escapeHtml(w.rainfall_24h ?? "—")} mm · 葉面濕潤 ${escapeHtml(w.leaf_wetness_hours ?? "—")} 小時
+    </p>`;
+
+  const items = report.risk_assessments
+    .map((item) => {
+      const level = String(item.risk_level || "").toUpperCase();
+      const cls = level === "HIGH" ? "weather-high" : level === "MEDIUM" ? "weather-medium" : "weather-low";
+      const label = item.risk_level_label || item.risk_level;
+      return `<div class="weather-risk-item ${cls}">
+        <strong>${escapeHtml(item.disease_name)}</strong>
+        <span class="weather-risk-badge">${escapeHtml(label)}</span>
+        <p>${escapeHtml(item.trigger_reason)}</p>
+        <p class="weather-hint">${escapeHtml(item.prevention_hint)}</p>
+      </div>`;
+    })
+    .join("");
+
+  return `<div class="weather-warning-section">
+    <h4>🌦️ 微氣象預警（Agri-Weather AI）</h4>
+    ${weatherMeta}
+    ${items}
+  </div>`;
+}
+
 function renderResultCard(data, corrected = false) {
   const source = data.source ? `<span class="source-tag">${data.source}</span>` : "";
   const correctedTag = corrected ? `<div class="corrected-badge">已手動更正並同步知識庫</div>` : "";
@@ -434,6 +466,7 @@ function renderResultCard(data, corrected = false) {
     ? `<p><strong>學名：</strong><em>${escapeHtml(data.scientific_name)}</em></p>`
     : "";
   const healthNotice = renderHealthNotice(data);
+  const weatherBlock = renderWeatherWarning(data);
   const organBlock = renderOrganAnalysis(data.organ_analysis);
   const reasoning = data.expert_reasoning
     ? `<p><strong>專家推理：</strong>${escapeHtml(data.expert_reasoning)}</p>`
@@ -451,6 +484,7 @@ function renderResultCard(data, corrected = false) {
     <div class="result-card">
       <h3>辨識結果 ${source}</h3>
       ${healthNotice}
+      ${weatherBlock}
       <p><span class="badge ${badgeClass(data.issue_type)}">${data.issue_type}</span>
       信心度 ${Math.round(data.confidence * 100)}%</p>
       <p><strong>植物：</strong>${escapeHtml(data.crop)}</p>
@@ -626,6 +660,29 @@ function showIdentifyResult(data, corrected = false) {
   bindIdentifyPanelEvents();
 }
 
+let farmLocation = null;
+
+function requestFarmLocation() {
+  return new Promise((resolve) => {
+    if (farmLocation) {
+      resolve(farmLocation);
+      return;
+    }
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        farmLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        resolve(farmLocation);
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+    );
+  });
+}
+
 async function identifyPhotos(organFiles, userCrop) {
   if (!useLocal) {
     const form = new FormData();
@@ -638,6 +695,11 @@ async function identifyPhotos(organFiles, userCrop) {
       if (file) form.append(fieldMap[organ], file, file.name);
     }
     if (userCrop?.trim()) form.append("user_provided_crop", userCrop.trim());
+    const loc = await requestFarmLocation();
+    if (loc) {
+      form.append("latitude", String(loc.lat));
+      form.append("longitude", String(loc.lon));
+    }
     const res = await fetch("/api/identify", { method: "POST", body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "辨識失敗");
@@ -954,6 +1016,94 @@ identifyBtn.addEventListener("click", async () => {
 
 identifyResetBtn.addEventListener("click", resetIdentifyPanel);
 
+const registerMonitorBtn = document.getElementById("register-monitor-btn");
+const monitorLabelInput = document.getElementById("monitor-label");
+const monitorListEl = document.getElementById("monitor-list");
+const monitorErrorEl = document.getElementById("monitor-error");
+
+async function loadWeatherMonitors() {
+  if (!monitorListEl || useLocal) return;
+  try {
+    const res = await fetch("/api/weather/monitors");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "載入失敗");
+    const items = data.items || [];
+    if (!items.length) {
+      monitorListEl.innerHTML = "<p class='muted'>尚未訂閱任何監測點</p>";
+      return;
+    }
+    const pushHint = data.push_configured
+      ? ""
+      : "<p class='muted'>伺服器尚未設定 LINE_NOTIFY_TOKEN 或 PUSH_WEBHOOK_URL，高風險僅記錄不推播。</p>";
+    monitorListEl.innerHTML =
+      pushHint +
+      items
+        .map(
+          (item) => `
+        <div class="monitor-item" data-id="${item.id}">
+          <div class="monitor-item-meta">
+            <strong>${escapeHtml(item.label || item.crop_name)}</strong>
+            <div class="muted">${escapeHtml(item.crop_name)} · ${Number(item.latitude).toFixed(4)}, ${Number(item.longitude).toFixed(4)}</div>
+            ${item.last_alert_at ? `<div class="muted">上次預警：${escapeHtml(item.last_high_disease || "")} · ${escapeHtml(item.last_alert_at)}</div>` : ""}
+          </div>
+          <button type="button" class="monitor-delete-btn" data-id="${item.id}">移除</button>
+        </div>`
+        )
+        .join("");
+    monitorListEl.querySelectorAll(".monitor-delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const delRes = await fetch(`/api/weather/monitors/${id}`, { method: "DELETE" });
+        if (!delRes.ok) {
+          const err = await delRes.json();
+          monitorErrorEl.textContent = err.detail || "移除失敗";
+          return;
+        }
+        monitorErrorEl.textContent = "";
+        loadWeatherMonitors();
+      });
+    });
+  } catch (err) {
+    monitorListEl.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+registerMonitorBtn?.addEventListener("click", async () => {
+  if (useLocal) {
+    monitorErrorEl.textContent = "本機模式無法訂閱伺服器預警";
+    return;
+  }
+  const crop = userCropInput?.value?.trim();
+  if (!crop) {
+    monitorErrorEl.textContent = "請先填寫作物提示（例如：番茄）";
+    return;
+  }
+  monitorErrorEl.textContent = "";
+  registerMonitorBtn.disabled = true;
+  registerMonitorBtn.textContent = "定位中…";
+  try {
+    const loc = await requestFarmLocation();
+    if (!loc) {
+      throw new Error("無法取得定位，請允許瀏覽器使用位置");
+    }
+    const form = new FormData();
+    form.append("crop_name", crop);
+    form.append("latitude", String(loc.lat));
+    form.append("longitude", String(loc.lon));
+    if (monitorLabelInput?.value?.trim()) form.append("label", monitorLabelInput.value.trim());
+    const res = await fetch("/api/weather/monitors", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "訂閱失敗");
+    if (monitorLabelInput) monitorLabelInput.value = "";
+    await loadWeatherMonitors();
+  } catch (err) {
+    monitorErrorEl.textContent = err.message;
+  } finally {
+    registerMonitorBtn.disabled = false;
+    registerMonitorBtn.textContent = "訂閱此位置預警";
+  }
+});
+
 let trainingFile = null;
 const trainingCameraInput = document.getElementById("training-camera-input");
 const trainingInput = document.getElementById("training-input");
@@ -1132,4 +1282,5 @@ async function loadVerifyPanel() {
   } catch {
     /* ignore */
   }
+  loadWeatherMonitors();
 })();

@@ -65,6 +65,18 @@ async def init_db() -> None:
                 prevention TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS farm_monitors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL DEFAULT '',
+                crop_name TEXT NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                push_enabled INTEGER NOT NULL DEFAULT 1,
+                last_alert_at TEXT,
+                last_high_disease TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             """
         )
         await _migrate_columns(db)
@@ -309,3 +321,53 @@ async def get_knowledge_stats() -> dict:
         cursor = await db.execute("SELECT COUNT(*) FROM knowledge_index")
         images = (await cursor.fetchone())[0]
         return {"entries": entries or 0, "indexed_images": images or 0}
+
+
+async def save_farm_monitor(record: dict) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            INSERT INTO farm_monitors (label, crop_name, latitude, longitude, push_enabled)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                record.get("label", "").strip(),
+                record["crop_name"].strip(),
+                float(record["latitude"]),
+                float(record["longitude"]),
+                1 if record.get("push_enabled", True) else 0,
+            ),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def list_farm_monitors(limit: int = 100) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM farm_monitors ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def delete_farm_monitor(monitor_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("DELETE FROM farm_monitors WHERE id = ?", (monitor_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def update_farm_monitor_alert(monitor_id: int, disease_name: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE farm_monitors
+            SET last_alert_at = datetime('now'), last_high_disease = ?
+            WHERE id = ?
+            """,
+            (disease_name, monitor_id),
+        )
+        await db.commit()

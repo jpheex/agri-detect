@@ -7,6 +7,7 @@ __pycache__/
 /data/preprocessed/
 /data/app.db
 /data/training_manifest.json
+/data/weather_leaf_wetness.json
 
 # DVC 管理的訓練影像本體（由 data/training.dvc 追蹤）
 /data/training/

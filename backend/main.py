@@ -14,19 +14,24 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.database import (
     correct_identification,
+    delete_farm_monitor,
     export_training_manifest,
     get_knowledge_stats,
     get_verification_stats,
     init_db,
+    list_farm_monitors,
     list_identifications,
     list_knowledge_entries,
     list_knowledge_index,
     list_training_samples,
+    save_farm_monitor,
     save_identification,
     save_training_sample,
     verify_identification,
 )
 from backend.config import APP_VERSION, BASE_DIR, DATA_DIR, format_version_label
+from backend.agri_ai_orchestrator import evaluate_weather_risk, run_comprehensive_diagnostic
+from backend.agri_weather_ai import AgriWeatherAIEngine, format_weather_context_for_gemini
 from backend.plant_health_analyzer import (
     PlantHealthAnalyzerError,
     analyze_plant_health_for_app,
@@ -36,6 +41,8 @@ from backend.crop_disease_identifier import (
     is_configured,
 )
 from backend.disease_management_kb import MOCK_KNOWLEDGE, get_management_protocol
+from backend.weather_scheduler import run_weather_alert_job, start_weather_scheduler
+from backend.push_notifier import push_configured
 from backend.knowledge import (
     image_vector,
     predict,
@@ -70,7 +77,10 @@ async def lifespan(_: FastAPI):
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
     await init_db()
+    scheduler = start_weather_scheduler()
     yield
+    if scheduler:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="農業病蟲害辨識系統", lifespan=lifespan)
@@ -126,6 +136,105 @@ async def qrcode_image(url: str = Query(..., min_length=8, max_length=2048)):
     return Response(content=buf.getvalue(), media_type="image/png")
 
 
+@app.get("/api/weather/risk")
+async def weather_risk(
+    crop_name: str = Query(..., min_length=1, max_length=100),
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+):
+    """依作物與經緯度評估微氣象病蟲害風險。"""
+    return await evaluate_weather_risk(crop_name.strip(), lat, lon)
+
+
+@app.get("/api/weather/monitors")
+async def weather_monitors():
+    items = await list_farm_monitors()
+    return {"items": items, "push_configured": push_configured()}
+
+
+@app.post("/api/weather/monitors")
+async def create_weather_monitor(
+    crop_name: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    label: str = Form(""),
+):
+    crop = crop_name.strip()
+    if not crop:
+        raise HTTPException(status_code=400, detail="作物名稱不可為空")
+    monitor_id = await save_farm_monitor(
+        {
+            "label": label.strip(),
+            "crop_name": crop,
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+    )
+    return {"id": monitor_id, "message": "已訂閱微氣象主動預警"}
+
+
+@app.delete("/api/weather/monitors/{monitor_id}")
+async def remove_weather_monitor(monitor_id: int):
+    ok = await delete_farm_monitor(monitor_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="找不到監測點")
+    return {"success": True}
+
+
+@app.post("/api/weather/check-now")
+async def weather_check_now():
+    """手動觸發一次全監測點掃描（測試/管理用）。"""
+    stats = await run_weather_alert_job()
+    return {"success": True, "stats": stats, "push_configured": push_configured()}
+
+
+@app.post("/api/diagnostic/comprehensive")
+async def comprehensive_diagnostic(
+    crop_name: str = Form(...),
+    lat: float = Form(...),
+    lon: float = Form(...),
+    user_notes: str = Form(""),
+    file_leaves: UploadFile | None = File(None),
+    file_flowers: UploadFile | None = File(None),
+    file_stems: UploadFile | None = File(None),
+):
+    """三方聯防：微氣象預警 + 影像診斷 + IPM 知識庫。"""
+    organ_uploads: list[tuple[str, UploadFile]] = []
+    if file_leaves and file_leaves.filename:
+        organ_uploads.append(("leaves", file_leaves))
+    if file_flowers and file_flowers.filename:
+        organ_uploads.append(("flowers", file_flowers))
+    if file_stems and file_stems.filename:
+        organ_uploads.append(("stems_trunk", file_stems))
+
+    saved_paths: list[Path] = []
+    organ_labels: list[str] | None = None
+    if organ_uploads:
+        saved_paths = [_save_upload(item, UPLOAD_DIR) for _, item in organ_uploads]
+        organ_labels = [label for label, _ in organ_uploads]
+
+    knowledge_entries = await list_knowledge_entries()
+    payload = await run_comprehensive_diagnostic(
+        crop_name=crop_name.strip(),
+        lat=lat,
+        lon=lon,
+        image_paths=[str(p) for p in saved_paths] if saved_paths else None,
+        organ_labels=organ_labels,
+        user_notes=user_notes.strip() or None,
+        knowledge_entries=knowledge_entries,
+    )
+
+    if payload.get("visual_ai_diagnostic_report"):
+        visual = payload["visual_ai_diagnostic_report"]
+        payload["summary"] = {
+            "crop": visual.get("crop"),
+            "issue_type": visual.get("issue_type"),
+            "issue_name": visual.get("issue_name"),
+            "confidence": visual.get("confidence"),
+        }
+    return payload
+
+
 @app.get("/api/management/lookup")
 async def management_lookup(disease_name: str, plant_name: str = ""):
     """依病蟲害名稱查詢 IPM 防治協議（測試/前端擴充用）。"""
@@ -169,9 +278,26 @@ async def _run_identify(
     organ_labels: list[str] | None = None,
     user_provided_crop: str = "",
     user_notes: str = "",
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> dict:
     index_rows = await list_knowledge_index()
     knowledge_entries = await list_knowledge_entries()
+
+    merged_notes = user_notes.strip()
+    weather_payload = None
+    crop_for_weather = (user_provided_crop or "").strip() or "通用作物"
+    if latitude is not None and longitude is not None:
+        try:
+            engine = AgriWeatherAIEngine()
+            weather_report = await engine.evaluate_farm_health_risk(
+                crop_for_weather, latitude, longitude
+            )
+            weather_payload = weather_report.model_dump(mode="json")
+            weather_ctx = format_weather_context_for_gemini(weather_report)
+            merged_notes = f"{merged_notes}\n\n{weather_ctx}".strip() if merged_notes else weather_ctx
+        except Exception:
+            pass
 
     if is_configured():
         try:
@@ -179,15 +305,20 @@ async def _run_identify(
                 [str(path) for path in saved_paths],
                 user_provided_crop=user_provided_crop or None,
                 organ_labels=organ_labels,
-                user_notes=user_notes or None,
+                user_notes=merged_notes or None,
                 knowledge_entries=knowledge_entries,
             )
+            if weather_payload:
+                result["agri_weather_ai_proactive_warning"] = weather_payload
             return result
         except (PlantHealthAnalyzerError, CropDiseaseIdentifierError):
             pass
 
     # 後備：本機知識庫比對（僅用第一張影像）
-    return await predict(saved_paths[0], index_rows, knowledge_entries)
+    result = await predict(saved_paths[0], index_rows, knowledge_entries)
+    if weather_payload:
+        result["agri_weather_ai_proactive_warning"] = weather_payload
+    return result
 
 
 @app.post("/api/identify")
@@ -199,6 +330,8 @@ async def identify(
     file_stems: UploadFile | None = File(None),
     user_provided_crop: str = Form(""),
     user_notes: str = Form(""),
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
 ):
     organ_uploads: list[tuple[str, UploadFile]] = []
     if file_leaves and file_leaves.filename:
@@ -223,6 +356,8 @@ async def identify(
         organ_labels=organ_labels,
         user_provided_crop=user_provided_crop.strip(),
         user_notes=user_notes.strip(),
+        latitude=latitude,
+        longitude=longitude,
     )
     primary = saved_paths[0]
     record_id = await save_identification(

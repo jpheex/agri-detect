@@ -666,6 +666,125 @@ textarea {
   border: 1px solid var(--border);
 }
 
+.weather-monitor-box {
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: #f8fcfa;
+}
+
+.weather-monitor-box h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.monitor-list {
+  margin-top: 0.75rem;
+}
+
+.monitor-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  margin-top: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.9rem;
+}
+
+.monitor-item-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.monitor-delete-btn {
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.35rem;
+}
+
+.weather-warning-section {
+  margin-bottom: 0.85rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+}
+
+.weather-warning-section h4 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.weather-meta {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+}
+
+.weather-risk-item {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.weather-risk-item p {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+}
+
+.weather-hint {
+  color: var(--green-700);
+  font-weight: 600;
+}
+
+.weather-risk-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.weather-high {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.weather-high .weather-risk-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.weather-medium {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.weather-medium .weather-risk-badge {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.weather-low {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.weather-low .weather-risk-badge {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 .health-light-green {
   background: #f0fdf4;
   border-color: #86efac;

@@ -47,11 +47,22 @@
       <section id="panel-identify" class="panel active">
         <div class="notice" id="identify-notice">
           可分別拍攝<strong>葉子、花朵、枝條/樹幹</strong>（不必全部都有）。Gemini 會依部位特徵鏈辨識植物種類與病蟲害。
+          若允許定位，系統會併入微氣象預警輔助診斷。
         </div>
         <div class="grid-2">
           <div>
             <label for="user-crop">作物提示（選填）</label>
             <input id="user-crop" name="user_crop" placeholder="例如：番茄、柑橘、蝴蝶蘭" />
+
+            <div class="weather-monitor-box">
+              <h3>🌦️ 微氣象主動預警</h3>
+              <p class="muted">訂閱後系統每 3 小時掃描一次，高風險時推播至 LINE（需伺服器設定）。</p>
+              <label for="monitor-label">監測點名稱（選填）</label>
+              <input id="monitor-label" placeholder="例如：A 區溫室" />
+              <button type="button" id="register-monitor-btn" class="btn btn-secondary">訂閱此位置預警</button>
+              <div id="monitor-error" class="error"></div>
+              <div id="monitor-list" class="monitor-list"></div>
+            </div>
 
             <div class="organ-slots">
               <div class="organ-slot" data-organ="leaves">

@@ -15,5 +15,15 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: CWA_API_KEY
+        sync: false
+      - key: LINE_NOTIFY_TOKEN
+        sync: false
+      - key: PUSH_WEBHOOK_URL
+        sync: false
+      - key: WEATHER_CRON_ENABLED
+        value: "true"
+      - key: WEATHER_CRON_HOURS
+        value: "3"
       - key: APP_VERSION
         sync: false

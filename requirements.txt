@@ -6,4 +6,5 @@ qrcode[pil]==8.0
 aiosqlite==0.20.0
 google-genai>=1.0.0
 python-dotenv==1.0.1
-pydantic>=2.0.0
+httpx==0.28.1
+APScheduler==3.11.0
