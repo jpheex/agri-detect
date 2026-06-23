@@ -506,6 +506,86 @@ async function localPredict(file) {
   );
 }
 
+const LS_ADVANCED = "agri_advanced_mode";
+const COMMON_CROPS = ["番茄", "水稻", "蘋果", "柑橘", "黃瓜", "玉米", "草莓", "香蕉"];
+
+function farmerHeadline(data) {
+  const crop = data.crop || "這株植物";
+  if (data.issue_type === "健康" || data.issue_name === "健康") {
+    return `您的 <strong>${escapeHtml(crop)}</strong> 看起來<strong>很健康</strong>`;
+  }
+  if (String(data.issue_name || "").includes("待確認")) {
+    return `這張照片需要<strong>再確認一下</strong>`;
+  }
+  return `您的 <strong>${escapeHtml(crop)}</strong> 可能是 <strong>${escapeHtml(data.issue_name)}</strong>`;
+}
+
+function farmerAdviceBlock(data) {
+  const health = renderHealthNotice(data);
+  const weather = renderWeatherWarning(data);
+  const ipm = renderIpmSections(data);
+  if (ipm) return `${health}${weather}${ipm}`;
+  const treat = data.treatment ? `<p><strong>建議處理：</strong>${escapeHtml(data.treatment)}</p>` : "";
+  const prev = data.prevention ? `<p><strong>平常注意：</strong>${escapeHtml(data.prevention)}</p>` : "";
+  return `${health}${weather}<div class="farmer-advice">${treat}${prev}</div>`;
+}
+
+function renderTechnicalDetails(data) {
+  const organBlock = renderOrganAnalysis(data.organ_analysis);
+  const reasoning = data.expert_reasoning
+    ? `<p><strong>專家說明：</strong>${escapeHtml(data.expert_reasoning)}</p>`
+    : "";
+  const photoFeedback = data.photo_feedback
+    ? `<p class="muted">${escapeHtml(data.photo_feedback)}</p>`
+    : "";
+  const extras = [
+    data.source ? `<p class="muted">來源：${escapeHtml(data.source)}</p>` : "",
+    data.community_match_score
+      ? `<p class="muted">參考相似度：${Math.round(data.community_match_score * 100)}%</p>`
+      : "",
+    data.avoided_mistake
+      ? `<p class="warning-text">已避開過往誤判：${escapeHtml(data.avoided_mistake.issue_name)}</p>`
+      : "",
+    data.scientific_name ? `<p class="muted">學名：${escapeHtml(data.scientific_name)}</p>` : "",
+    organBlock,
+    reasoning,
+    photoFeedback,
+  ]
+    .filter(Boolean)
+    .join("");
+  if (!extras) return "";
+  return `<details class="fold-details technical-details"><summary>看詳細說明</summary>${extras}</details>`;
+}
+
+function renderFeedbackSection(data, state) {
+  if (!data.id) return "";
+  if (state === "corrected") {
+    return `<p class="verify-thanks">✅ 已記住正確答案，下次會更準，謝謝！</p>`;
+  }
+  if (state === "ok") {
+    return `<p class="verify-thanks">✅ 已記住，謝謝！會幫大家越辨越準。</p>`;
+  }
+  if (state === "wrong") {
+    return `<div id="correction-slot">${renderCorrectionForm(data)}</div>`;
+  }
+  return `
+    <div class="farmer-feedback">
+      <p class="farmer-feedback-prompt">這樣判斷對嗎？</p>
+      <div class="farmer-actions">
+        <button type="button" id="btn-verify-ok" class="btn btn-farmer-ok">✅ 正確</button>
+        <button type="button" id="btn-verify-wrong" class="btn btn-farmer-bad">❌ 不對，改一下</button>
+      </div>
+      <div id="correction-slot"></div>
+    </div>`;
+}
+
+function feedbackState(data, corrected) {
+  if (corrected) return "corrected";
+  if (data._feedback === "ok") return "ok";
+  if (data._feedback === "wrong") return "wrong";
+  return "pending";
+}
+
 function renderIpmSections(data) {
   const treatment = data.treatment_strategies;
   const prevention = data.prevention_strategies;
@@ -585,59 +665,21 @@ function renderWeatherWarning(data) {
 }
 
 function renderResultCard(data, corrected = false) {
-  const source = data.source ? `<span class="source-tag">${data.source}</span>` : "";
-  const correctedTag = corrected ? `<div class="corrected-badge">已手動更正並同步知識庫</div>` : "";
-  const scientific = data.scientific_name
-    ? `<p><strong>學名：</strong><em>${escapeHtml(data.scientific_name)}</em></p>`
-    : "";
-  const healthNotice = renderHealthNotice(data);
-  const weatherBlock = renderWeatherWarning(data);
-  const organBlock = renderOrganAnalysis(data.organ_analysis);
-  const reasoning = data.expert_reasoning
-    ? `<p><strong>專家推理：</strong>${escapeHtml(data.expert_reasoning)}</p>`
-    : "";
-  const photoFeedback = data.photo_feedback
-    ? `<p class="muted"><strong>拍攝回饋：</strong>${escapeHtml(data.photo_feedback)}</p>`
-    : "";
-  const ipmBlock = renderIpmSections(data);
-  const actionPlan =
-    data.action_plan && data.action_plan.length
-      ? `<p><strong>建議：</strong>${data.action_plan.map((item) => escapeHtml(item)).join("；")}</p>`
-      : "";
-
-  const communityHint = data.community_match_score
-    ? `<p class="muted">群眾知識庫相似度：${Math.round(data.community_match_score * 100)}%</p>`
-    : "";
-  const communitySuggest = data.community_suggestion
-    ? `<p class="muted">群眾知識庫參考：${escapeHtml(data.community_suggestion.issue_name)}（${Math.round(data.community_suggestion.match_score * 100)}%）</p>`
-    : "";
-  const avoidedMistake = data.avoided_mistake
-    ? `<p class="warning-text">已避開過往誤判：${escapeHtml(data.avoided_mistake.issue_name)}（相似度 ${Math.round(data.avoided_mistake.match_score * 100)}%）</p>`
-    : "";
+  const state = feedbackState(data, corrected);
+  const correctedTag = corrected ? `<div class="corrected-badge">已更新正確答案</div>` : "";
   const reviewNotice = data.review_required
-    ? `<p class="warning-text">此結果需人工確認，請補充正確標籤以協助系統學習。</p>`
+    ? `<p class="warning-text">請按「不對，改一下」告訴我們正確答案。</p>`
     : "";
 
   return `
-    <div class="result-card">
-      <h3>辨識結果 ${source}</h3>
-      ${healthNotice}
-      ${weatherBlock}
-      <p><span class="badge ${badgeClass(data.issue_type)}">${data.issue_type}</span>
-      信心度 ${Math.round(data.confidence * 100)}%</p>
-      ${communityHint}
-      ${communitySuggest}
-      ${avoidedMistake}
+    <div class="result-card farmer-result">
+      <h2 class="farmer-headline">${farmerHeadline(data)}</h2>
+      <p class="farmer-meta"><span class="badge ${badgeClass(data.issue_type)}">${escapeHtml(data.issue_type)}</span></p>
       ${reviewNotice}
-      <p><strong>植物：</strong>${escapeHtml(data.crop)}</p>
-      ${scientific}
-      <p><strong>診斷：</strong>${escapeHtml(data.issue_name)}</p>
-      ${organBlock}
-      ${reasoning}
-      ${ipmBlock || `<p><strong>治療：</strong>${escapeHtml(data.treatment)}</p><p><strong>預防：</strong>${escapeHtml(data.prevention)}</p>`}
-      ${!ipmBlock && actionPlan ? actionPlan : ""}
-      ${photoFeedback}
+      ${farmerAdviceBlock(data)}
+      ${renderTechnicalDetails(data)}
       ${correctedTag}
+      ${renderFeedbackSection(data, state)}
     </div>`;
 }
 
@@ -660,33 +702,37 @@ function safeExternalUrl(url) {
 }
 
 function renderCorrectionForm(data) {
+  const chips = COMMON_CROPS.map(
+    (crop) =>
+      `<button type="button" class="crop-chip" data-crop="${escapeHtml(crop)}">${escapeHtml(crop)}</button>`
+  ).join("");
   return `
     <div class="correction-panel" id="correction-panel">
-      <h4>辨識錯誤 — 手動更正</h4>
-      <p class="muted">修正後會永久保存：舊的錯誤判斷進入錯誤知識庫，正確答案加入群眾知識庫，累積越多辨識越準。</p>
+      <h4>請告訴我們正確答案</h4>
+      <p class="muted">填好後系統會記住，下次大家拍照會更準。</p>
       <form id="correction-form">
-        <label for="corr-crop">正確品種</label>
-        <input id="corr-crop" name="crop" value="${escapeHtml(data.crop)}" required />
+        <label for="corr-crop">是什麼作物？</label>
+        <div class="crop-chips">${chips}</div>
+        <input id="corr-crop" class="input-large" name="crop" value="${escapeHtml(data.crop)}" required placeholder="點選上方或自行輸入" />
 
         <label for="corr-issue-type">問題類型</label>
-        <select id="corr-issue-type" name="issue_type">
+        <select id="corr-issue-type" class="input-large" name="issue_type">
           <option value="病害" ${data.issue_type === "病害" ? "selected" : ""}>病害</option>
           <option value="蟲害" ${data.issue_type === "蟲害" ? "selected" : ""}>蟲害</option>
-          <option value="健康" ${data.issue_type === "健康" ? "selected" : ""}>健康</option>
+          <option value="健康" ${data.issue_type === "健康" ? "selected" : ""}>健康（沒問題）</option>
           <option value="生理障礙" ${data.issue_type === "生理障礙" ? "selected" : ""}>生理障礙</option>
-          <option value="待確認" ${data.issue_type === "待確認" ? "selected" : ""}>待確認</option>
         </select>
 
-        <label for="corr-issue-name">正確問題名稱</label>
-        <input id="corr-issue-name" name="issue_name" value="${escapeHtml(data.issue_name)}" required />
+        <label for="corr-issue-name">什麼問題？</label>
+        <input id="corr-issue-name" class="input-large" name="issue_name" value="${escapeHtml(data.issue_name === "待確認（與過往誤判案例相似）" ? "" : data.issue_name)}" required placeholder="例如：晚疫病、健康" />
 
-        <label for="corr-treatment">治療方式</label>
-        <textarea id="corr-treatment" name="treatment">${escapeHtml(data.treatment)}</textarea>
+        <details class="fold-details">
+          <summary>治療／預防（可不填）</summary>
+          <textarea id="corr-treatment" name="treatment" placeholder="留空由系統自動補充">${escapeHtml(data.treatment)}</textarea>
+          <textarea id="corr-prevention" name="prevention" placeholder="留空由系統自動補充">${escapeHtml(data.prevention)}</textarea>
+        </details>
 
-        <label for="corr-prevention">預防方式</label>
-        <textarea id="corr-prevention" name="prevention">${escapeHtml(data.prevention)}</textarea>
-
-        <button type="submit" class="btn btn-primary">儲存更正並同步知識庫</button>
+        <button type="submit" class="btn btn-primary btn-large">儲存正確答案</button>
         <button type="button" id="cancel-correction" class="btn btn-secondary">取消</button>
         <div id="correction-error" class="error"></div>
       </form>
@@ -694,14 +740,7 @@ function renderCorrectionForm(data) {
 }
 
 function renderIdentifyPanel(data, corrected = false) {
-  const showCorrectBtn = !corrected && data.id;
-  return (
-    renderResultCard(data, corrected) +
-    (showCorrectBtn
-      ? `<button type="button" id="show-correction" class="btn btn-danger">辨識錯誤，手動更正</button>`
-      : "") +
-    (showCorrectBtn ? `<div id="correction-slot"></div>` : "")
-  );
+  return renderResultCard(data, corrected);
 }
 
 let lastIdentifyData = null;
@@ -771,8 +810,15 @@ async function syncLocalCorrected(record) {
 }
 
 function bindCorrectionForm(recordId, slot, { onSuccess, onCancel } = {}) {
+  slot.querySelectorAll(".crop-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const input = slot.querySelector("#corr-crop");
+      if (input) input.value = chip.dataset.crop || "";
+    });
+  });
+
   slot.querySelector("#cancel-correction")?.addEventListener("click", () => {
-    slot.innerHTML = "";
+    if (lastIdentifyData) lastIdentifyData._feedback = null;
     onCancel?.();
   });
 
@@ -783,10 +829,7 @@ function bindCorrectionForm(recordId, slot, { onSuccess, onCancel } = {}) {
     try {
       const formData = new FormData(e.target);
       const result = await submitCorrection(recordId, formData);
-      alert(
-        result.message ||
-          "已永久記錄：錯誤判斷已記住，正確答案已加入群眾知識庫"
-      );
+      alert(result.message || "已記住，謝謝！");
       onSuccess?.(result);
     } catch (err) {
       errEl.textContent = err.message;
@@ -795,27 +838,49 @@ function bindCorrectionForm(recordId, slot, { onSuccess, onCancel } = {}) {
 }
 
 function bindIdentifyPanelEvents() {
-  const showBtn = document.getElementById("show-correction");
-  const slot = document.getElementById("correction-slot");
-  if (!showBtn || !slot || !lastIdentifyData) return;
+  if (!lastIdentifyData?.id) return;
 
-  showBtn.addEventListener("click", () => {
-    slot.innerHTML = renderCorrectionForm(lastIdentifyData);
-    showBtn.classList.add("hidden");
-    bindCorrectionForm(lastIdentifyData.id, slot, {
-      onSuccess: (result) => {
-        lastIdentifyData = { ...lastIdentifyData, ...result, id: lastIdentifyData.id };
-        identifyResult.innerHTML = renderIdentifyPanel(lastIdentifyData, true);
-      },
-      onCancel: () => showBtn.classList.remove("hidden"),
-    });
+  const okBtn = document.getElementById("btn-verify-ok");
+  const wrongBtn = document.getElementById("btn-verify-wrong");
+
+  okBtn?.addEventListener("click", async () => {
+    okBtn.disabled = true;
+    wrongBtn.disabled = true;
+    await verifyRecord(lastIdentifyData.id, true);
+    lastIdentifyData._feedback = "ok";
+    showIdentifyResult(lastIdentifyData);
   });
+
+  wrongBtn?.addEventListener("click", async () => {
+    okBtn.disabled = true;
+    wrongBtn.disabled = true;
+    await verifyRecord(lastIdentifyData.id, false);
+    lastIdentifyData._feedback = "wrong";
+    showIdentifyResult(lastIdentifyData);
+  });
+
+  if (lastIdentifyData._feedback === "wrong") {
+    const slot = document.getElementById("correction-slot");
+    if (slot?.querySelector("#correction-form")) {
+      bindCorrectionForm(lastIdentifyData.id, slot, {
+        onSuccess: (result) => {
+          lastIdentifyData = { ...lastIdentifyData, ...result, id: lastIdentifyData.id, _feedback: "corrected" };
+          showIdentifyResult(lastIdentifyData, true);
+        },
+        onCancel: () => {
+          lastIdentifyData._feedback = "pending";
+          showIdentifyResult(lastIdentifyData);
+        },
+      });
+    }
+  }
 }
 
 function showIdentifyResult(data, corrected = false) {
   lastIdentifyData = data;
   identifyResult.innerHTML = renderIdentifyPanel(data, corrected);
   bindIdentifyPanelEvents();
+  identifyResult.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 let farmLocation = null;
@@ -1536,22 +1601,17 @@ async function loadVerifyPanel() {
 (async () => {
   await ensureLatestApp();
   useLocal = !(await apiAvailable());
+  initAdvancedMode();
   const notice = document.getElementById("identify-notice");
   if (useLocal) {
     notice.innerHTML +=
-      " <strong>本機模式</strong>：未連伺服器，無法使用 Gemini；訓練資料仍會存入瀏覽器。";
+      " <strong>目前離線</strong>：連上網路後辨識會更準。";
     return;
   }
   try {
     const res = await fetch("/api/health");
     const data = await res.json();
     showStorageWarning(data.storage);
-    if (data.gemini) {
-      notice.innerHTML += " <strong>Gemini 已啟用</strong>。";
-    } else {
-      notice.innerHTML +=
-        " <strong>Gemini 未設定</strong>：請在專案根目錄建立 `.env` 並填入 `GEMINI_API_KEY` 後重啟伺服器。";
-    }
   } catch {
     /* ignore */
   }
@@ -1560,3 +1620,15 @@ async function loadVerifyPanel() {
   window.useLocal = useLocal;
   window.OfflineSync?.updateOfflineBanner();
 })();
+
+function initAdvancedMode() {
+  const toggle = document.getElementById("toggle-advanced");
+  if (!toggle) return;
+  const on = localStorage.getItem(LS_ADVANCED) === "1";
+  document.querySelectorAll(".tab-advanced").forEach((el) => el.classList.toggle("hidden", !on));
+  toggle.textContent = on ? "隱藏進階功能" : "進階（農會人員）";
+  toggle.addEventListener("click", () => {
+    localStorage.setItem(LS_ADVANCED, on ? "0" : "1");
+    location.reload();
+  });
+}

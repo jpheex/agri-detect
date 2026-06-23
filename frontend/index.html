@@ -14,8 +14,8 @@
     <header>
       <div class="container header-row">
         <div class="header-text">
-          <h1>🌾 農業病蟲害辨識系統</h1>
-          <p>上傳照片辨識、累積訓練資料、驗收辨識成果</p>
+          <h1>🌾 農業病蟲害辨識</h1>
+          <p>拍照就知道什麼植物、有什麼問題、怎麼處理</p>
         </div>
         <button type="button" id="share-qr-btn" class="btn btn-header-qr" aria-haspopup="dialog">📱 分享 QR Code</button>
       </div>
@@ -40,27 +40,27 @@
     <main class="container">
       <div id="storage-warning" class="storage-warning hidden" role="alert"></div>
       <nav class="tabs">
-        <button class="tab-btn active" data-tab="identify">照片辨識</button>
-        <button class="tab-btn" data-tab="training">預防訓練</button>
-        <button class="tab-btn" data-tab="verify">成果驗收</button>
+        <button class="tab-btn active" data-tab="identify">拍照辨識</button>
+        <button class="tab-btn tab-advanced hidden" data-tab="training">資料管理</button>
+        <button class="tab-btn tab-advanced hidden" data-tab="verify">紀錄查詢</button>
       </nav>
+      <p class="advanced-bar">
+        <button type="button" id="toggle-advanced" class="advanced-toggle">進階（農會人員）</button>
+      </p>
 
       <section id="panel-identify" class="panel active">
         <div id="offline-banner" class="offline-banner hidden"></div>
-        <div class="notice" id="identify-notice">
-          可分別拍攝<strong>葉子、花朵、枝條/樹幹</strong>（不必全部都有）。Gemini 會依部位特徵鏈辨識植物種類與病蟲害。
-          若允許定位，系統會併入微氣象預警輔助診斷。
+        <div class="notice notice-simple" id="identify-notice">
+          <strong>怎麼拍？</strong> 至少拍一張<strong>有問題的葉子</strong>，讓葉子填滿畫面、光線清楚即可。
         </div>
-        <div class="grid-2">
-          <div>
-            <label for="user-crop">作物提示（選填）</label>
-            <input id="user-crop" name="user_crop" placeholder="例如：番茄、柑橘、蝴蝶蘭" />
+        <div class="grid-2 identify-layout">
+          <div class="identify-input-col">
+            <label for="user-crop">我知道是什麼作物（可不填）</label>
+            <input id="user-crop" name="user_crop" placeholder="例如：番茄、蘋果" />
 
-            <div id="offline-panel" class="offline-panel">
-              <button type="button" id="offline-panel-toggle" class="offline-panel-toggle">
-                🩺 離線自主檢查（無網路時使用）
-              </button>
-              <div id="offline-panel-body" class="offline-panel-body">
+            <details class="fold-panel">
+              <summary>🩺 沒網路時怎麼辦？</summary>
+              <div id="offline-panel" class="offline-panel">
                 <div id="offline-self-check" class="offline-self-check">
                   <p class="muted">請勾選田間可見特徵，斷網時可立刻取得急救建議。</p>
                   <div class="offline-check-grid">
@@ -82,10 +82,11 @@
                   <button type="button" id="offline-sync-btn" class="btn btn-secondary hidden">同步離線任務</button>
                 </div>
               </div>
-            </div>
+            </details>
 
-            <div class="weather-monitor-box">
-              <h3>🌦️ 微氣象主動預警</h3>
+            <details class="fold-panel">
+              <summary>🌦️ 天氣預警訂閱（選用）</summary>
+              <div class="weather-monitor-box">
               <p class="muted">訂閱後系統每 3 小時掃描一次，高風險時推播至 LINE（需伺服器設定）。</p>
               <label for="monitor-label">監測點位置（GPS 自動填入）</label>
               <div class="monitor-gps-row">
@@ -96,8 +97,10 @@
               <button type="button" id="register-monitor-btn" class="btn btn-secondary">訂閱此位置預警</button>
               <div id="monitor-error" class="error"></div>
               <div id="monitor-list" class="monitor-list"></div>
-            </div>
+              </div>
+            </details>
 
+            <p class="photo-hint">📷 點格子拍照（至少拍葉子一張）</p>
             <div class="organ-slots">
               <div class="organ-slot" data-organ="leaves">
                 <div class="organ-slot-label">🍃 葉子</div>
@@ -125,8 +128,8 @@
               </div>
             </div>
 
-            <button id="identify-btn" class="btn btn-primary" disabled>開始辨識</button>
-            <button type="button" id="identify-reset-btn" class="btn btn-secondary hidden">辨識其他植物</button>
+            <button id="identify-btn" class="btn btn-primary btn-large" disabled>開始辨識</button>
+            <button type="button" id="identify-reset-btn" class="btn btn-secondary btn-large hidden">再拍一張</button>
             <div id="identify-error" class="error"></div>
           </div>
           <div id="identify-result"></div>
@@ -186,6 +189,7 @@
       </section>
 
       <section id="panel-verify" class="panel">
+        <div class="notice notice-simple">查詢過去的辨識紀錄。農民日常使用只要「拍照辨識」頁按對/錯即可。</div>
         <div id="stats" class="stats"></div>
         <div id="verify-list" class="list"></div>
       </section>

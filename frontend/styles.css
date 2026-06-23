@@ -995,4 +995,187 @@ textarea {
   .organ-slots {
     grid-template-columns: 1fr;
   }
+
+  .identify-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .farmer-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* —— 農民簡化介面 —— */
+.notice-simple {
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.advanced-bar {
+  margin: -0.5rem 0 0.75rem;
+  text-align: right;
+}
+
+.advanced-toggle {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.fold-panel {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.5rem 0.75rem;
+  background: #fafdfa;
+}
+
+.fold-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.35rem 0;
+}
+
+.photo-hint {
+  margin: 0.75rem 0 0.35rem;
+  font-weight: 600;
+}
+
+.btn-large {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1.1rem;
+  margin-top: 0.75rem;
+}
+
+.input-large {
+  font-size: 1.05rem;
+  min-height: 48px;
+  padding: 0.65rem 0.75rem;
+}
+
+.farmer-result {
+  border-width: 2px;
+  border-color: var(--green-500);
+}
+
+.farmer-headline {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+  line-height: 1.45;
+  color: var(--green-900);
+}
+
+.farmer-meta {
+  margin: 0 0 1rem;
+}
+
+.farmer-advice {
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.farmer-feedback {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--border);
+}
+
+.farmer-feedback-prompt {
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 0.75rem;
+}
+
+.farmer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.btn-farmer-ok {
+  background: var(--ok);
+  color: #fff;
+  border: none;
+  min-height: 56px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.btn-farmer-bad {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  min-height: 56px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.btn-farmer-ok:disabled,
+.btn-farmer-bad:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.verify-thanks {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--green-100);
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--green-900);
+}
+
+.crop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.crop-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.crop-chip:active {
+  background: var(--green-100);
+  border-color: var(--green-500);
+}
+
+.fold-details {
+  margin: 0.75rem 0;
+}
+
+.fold-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.technical-details {
+  margin-top: 1rem;
+}
+
+.verify-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
 }
