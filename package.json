@@ -1,0 +1,13 @@
+{
+  "name": "agri-detect",
+  "private": true,
+  "scripts": {
+    "cf:d1:create": "wrangler d1 create agri-detect-db",
+    "cf:d1:migrate:local": "wrangler d1 execute agri-detect-db --local --file=schema/d1.sql",
+    "cf:d1:migrate:remote": "wrangler d1 execute agri-detect-db --remote --file=schema/d1.sql",
+    "cf:r2:create": "wrangler r2 bucket create agri-detect-media"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

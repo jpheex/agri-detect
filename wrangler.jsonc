@@ -1,0 +1,19 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "agri-detect",
+	"compatibility_date": "2026-03-01",
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "agri-detect-db",
+			"database_id": "925e231b-a197-43d1-93a4-336e11aa2cb9",
+			"remote": true
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "BUCKET",
+			"bucket_name": "agri-detect-media"
+		}
+	]
+}

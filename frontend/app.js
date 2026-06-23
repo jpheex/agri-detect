@@ -174,6 +174,16 @@ async function apiAvailable() {
   }
 }
 
+function showStorageWarning(storage) {
+  const el = document.getElementById("storage-warning");
+  if (!el || !storage || storage.persistent) {
+    if (el) el.classList.add("hidden");
+    return;
+  }
+  el.textContent = storage.warning || "資料可能於伺服器重啟後遺失，請改用持久化部署。";
+  el.classList.remove("hidden");
+}
+
 function readLocal(key) {
   return JSON.parse(localStorage.getItem(key) || "[]");
 }
@@ -1361,6 +1371,7 @@ async function loadVerifyPanel() {
   try {
     const res = await fetch("/api/health");
     const data = await res.json();
+    showStorageWarning(data.storage);
     if (data.gemini) {
       notice.innerHTML += " <strong>Gemini 已啟用</strong>。";
     } else {

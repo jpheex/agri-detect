@@ -1,13 +1,21 @@
-# ⚠️ 免費預覽用：重啟／重新部署後 data/ 內所有資料（訓練、驗收、照片）會消失。
-# 正式使用請改 deploy render.persistent.yaml（Starter + Persistent Disk）。
+# 正式環境用：Starter 方案 + Persistent Disk，訓練／驗收資料重啟後仍保留。
+# 在 Render Dashboard → Blueprint → 改用此檔，或手動升級現有服務並掛載磁碟。
+#
+# 費用參考（2026）：Starter Web ~$7/月 + 1GB 磁碟 ~$0.25/月
+# 文件：https://render.com/docs/disks
+
 services:
   - type: web
     name: agri-detect
     runtime: python
-    plan: free
+    plan: starter
     rootDir: .
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: agri-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.0
@@ -30,20 +38,4 @@ services:
       - key: FCM_SERVER_KEY
         sync: false
       - key: APP_VERSION
-        sync: false
-      - key: STORAGE_EPHEMERAL
-        value: "true"
-      - key: CF_ACCOUNT_ID
-        sync: false
-      - key: CF_API_TOKEN
-        sync: false
-      - key: CF_D1_DATABASE_ID
-        sync: false
-      - key: R2_BUCKET_NAME
-        sync: false
-      - key: R2_ACCESS_KEY_ID
-        sync: false
-      - key: R2_SECRET_ACCESS_KEY
-        sync: false
-      - key: R2_ENDPOINT
         sync: false

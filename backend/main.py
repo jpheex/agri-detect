@@ -1,6 +1,4 @@
 import mimetypes
-import shutil
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -46,6 +44,9 @@ from backend.offline_db import init_offline_db
 from backend.offline_router import router as offline_router
 from backend.weather_scheduler import run_weather_alert_job, start_weather_scheduler
 from backend.push_notifier import push_configured
+from backend.storage import assess_storage_persistence
+from backend.cloudflare_config import cloudflare_storage_enabled, d1_enabled, r2_enabled
+from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
     image_vector,
     predict,
@@ -55,11 +56,9 @@ from backend.knowledge import (
     vector_to_json,
 )
 
-UPLOAD_DIR = DATA_DIR / "uploads"
-TRAINING_DIR = DATA_DIR / "training"
+UPLOAD_FOLDER = "uploads"
+TRAINING_FOLDER = "training"
 STATIC_DIR = BASE_DIR / "frontend"
-
-ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _image_url(image_path: str) -> str:
@@ -77,8 +76,9 @@ mimetypes.add_type("application/manifest+json", ".webmanifest", True)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    TRAINING_DIR.mkdir(parents=True, exist_ok=True)
+    if not r2_enabled():
+        (DATA_DIR / UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
+        (DATA_DIR / TRAINING_FOLDER).mkdir(parents=True, exist_ok=True)
     await init_db()
     await init_offline_db()
     scheduler = start_weather_scheduler()
@@ -108,20 +108,23 @@ async def disable_browser_cache(request, call_next):
     return response
 
 
-def _save_upload(file: UploadFile, folder: Path) -> Path:
-    suffix = Path(file.filename or "image.jpg").suffix.lower()
-    if suffix not in ALLOWED_EXT:
-        raise HTTPException(status_code=400, detail="僅支援 jpg、jpeg、png、webp")
-
-    target = folder / f"{uuid.uuid4().hex}{suffix}"
-    with target.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return target
+async def _save_upload(file: UploadFile, folder: str) -> Path:
+    return await store_upload(file, folder)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "gemini": is_configured()}
+    storage = assess_storage_persistence()
+    return {
+        "status": "ok",
+        "gemini": is_configured(),
+        "storage": storage,
+        "cloudflare": {
+            "d1": d1_enabled(),
+            "r2": r2_enabled(),
+            "persistent": cloudflare_storage_enabled(),
+        },
+    }
 
 
 @app.get("/api/version")
@@ -224,7 +227,7 @@ async def comprehensive_diagnostic(
     saved_paths: list[Path] = []
     organ_labels: list[str] | None = None
     if organ_uploads:
-        saved_paths = [_save_upload(item, UPLOAD_DIR) for _, item in organ_uploads]
+        saved_paths = [await _save_upload(item, UPLOAD_FOLDER) for _, item in organ_uploads]
         organ_labels = [label for label, _ in organ_uploads]
 
     knowledge_entries = await list_knowledge_entries()
@@ -356,13 +359,13 @@ async def identify(
         organ_uploads.append(("stems_trunk", file_stems))
 
     if organ_uploads:
-        saved_paths = [_save_upload(item, UPLOAD_DIR) for _, item in organ_uploads]
+        saved_paths = [await _save_upload(item, UPLOAD_FOLDER) for _, item in organ_uploads]
         organ_labels = [label for label, _ in organ_uploads]
     else:
         uploads = files if files else ([file] if file else [])
         if not uploads:
             raise HTTPException(status_code=400, detail="請至少拍攝或上傳一張照片")
-        saved_paths = [_save_upload(item, UPLOAD_DIR) for item in uploads]
+        saved_paths = [await _save_upload(item, UPLOAD_FOLDER) for item in uploads]
         organ_labels = None
 
     result = await _run_identify(
@@ -373,16 +376,16 @@ async def identify(
         latitude=latitude,
         longitude=longitude,
     )
-    primary = saved_paths[0]
+    db_paths = [db_path_for_saved(UPLOAD_FOLDER, path) for path in saved_paths]
     record_id = await save_identification(
         {
-            "image_path": str(primary.relative_to(BASE_DIR)),
+            "image_path": db_paths[0],
             **{k: v for k, v in result.items() if k in {
                 "crop", "issue_type", "issue_name", "confidence", "treatment", "prevention"
             }},
         }
     )
-    image_urls = [_image_url(str(path)) for path in saved_paths]
+    image_urls = [_image_url(path) for path in db_paths]
     return {
         "id": record_id,
         "image_url": image_urls[0],
@@ -489,11 +492,12 @@ async def add_training_sample(
     treatment: str = Form(""),
     prevention: str = Form(""),
 ):
-    saved = _save_upload(file, TRAINING_DIR)
+    saved = await _save_upload(file, TRAINING_FOLDER)
+    db_path = db_path_for_saved(TRAINING_FOLDER, saved)
     vector = vector_to_json(image_vector(saved))
     record_id = await save_training_sample(
         {
-            "image_path": str(saved.relative_to(BASE_DIR)),
+            "image_path": db_path,
             "crop": crop.strip(),
             "issue_type": issue_type.strip(),
             "issue_name": issue_name.strip(),
@@ -505,7 +509,7 @@ async def add_training_sample(
     )
     await sync_training_sample(
         sample_id=record_id,
-        image_path=saved,
+        image_path=db_path,
         crop=crop.strip(),
         issue_type=issue_type.strip(),
         issue_name=issue_name.strip(),
@@ -515,7 +519,7 @@ async def add_training_sample(
     meta = await get_knowledge_stats()
     return {
         "id": record_id,
-        "image_url": _image_url(str(saved)),
+        "image_url": _image_url(db_path),
         "message": f"已同步至辨識知識庫（共 {meta['entries']} 類、{meta['indexed_images']} 張參考圖）",
         **meta,
     }
@@ -543,10 +547,11 @@ async def training_export():
 
 @app.get("/files/{folder}/{filename}")
 async def serve_file(folder: str, filename: str):
-    target = DATA_DIR / folder / filename
-    if not target.exists():
+    payload = await read_file_response(folder, filename)
+    if not payload:
         raise HTTPException(status_code=404, detail="檔案不存在")
-    return FileResponse(target)
+    data, content_type = payload
+    return Response(content=data, media_type=content_type)
 
 
 @app.get("/")

@@ -8,6 +8,8 @@ from backend.database import (
     get_identification,
     upsert_knowledge_entry,
 )
+from backend.config import BASE_DIR
+from backend.file_storage import materialize_image
 
 BASE_KNOWLEDGE = [
     {
@@ -121,16 +123,33 @@ def resolve_advice(
     )
 
 
+async def _resolve_image_path(image_path: str | Path, base_dir: Path = BASE_DIR) -> Path | None:
+    path = Path(image_path)
+    if path.is_absolute() and path.exists():
+        return path
+    local = base_dir / str(image_path)
+    if local.exists():
+        return local
+    return await materialize_image(str(image_path))
+
+
 async def sync_training_sample(
     sample_id: int,
-    image_path: Path,
+    image_path: str | Path,
     crop: str,
     issue_type: str,
     issue_name: str,
     treatment: str = "",
     prevention: str = "",
 ) -> None:
-    vector = image_vector(image_path)
+    stored_path = str(image_path)
+    resolved = await _resolve_image_path(image_path)
+    if resolved is None:
+        resolved = await materialize_image(stored_path)
+    if resolved is None:
+        return
+
+    vector = image_vector(resolved)
     advice = resolve_advice(crop, issue_type, issue_name, treatment, prevention)
 
     await upsert_knowledge_entry(
@@ -145,7 +164,7 @@ async def sync_training_sample(
         {
             "source_type": "training",
             "source_id": sample_id,
-            "image_path": str(image_path),
+            "image_path": stored_path,
             "image_vector": vector_to_json(vector),
             "crop": crop,
             "issue_type": issue_type,
@@ -161,11 +180,12 @@ async def sync_verified_identification(record_id: int, base_dir: Path) -> None:
     if not record:
         return
 
-    image_path = base_dir / record["image_path"]
-    if not image_path.exists():
+    stored_path = record["image_path"]
+    resolved = await _resolve_image_path(stored_path, base_dir)
+    if resolved is None:
         return
 
-    vector = image_vector(image_path)
+    vector = image_vector(resolved)
     await upsert_knowledge_entry(
         crop=record["crop"],
         issue_type=record["issue_type"],
@@ -178,7 +198,7 @@ async def sync_verified_identification(record_id: int, base_dir: Path) -> None:
         {
             "source_type": "verified",
             "source_id": record_id,
-            "image_path": str(image_path),
+            "image_path": stored_path,
             "image_vector": vector_to_json(vector),
             "crop": record["crop"],
             "issue_type": record["issue_type"],
@@ -202,12 +222,13 @@ async def sync_manual_correction(
     if not record:
         return
 
-    image_path = base_dir / record["image_path"]
-    if not image_path.exists():
+    stored_path = record["image_path"]
+    resolved = await _resolve_image_path(stored_path, base_dir)
+    if resolved is None:
         return
 
     advice = resolve_advice(crop, issue_type, issue_name, treatment, prevention)
-    vector = image_vector(image_path)
+    vector = image_vector(resolved)
 
     await upsert_knowledge_entry(
         crop=crop,
@@ -221,7 +242,7 @@ async def sync_manual_correction(
         {
             "source_type": "corrected",
             "source_id": record_id,
-            "image_path": str(image_path),
+            "image_path": stored_path,
             "image_vector": vector_to_json(vector),
             "crop": crop,
             "issue_type": issue_type,
