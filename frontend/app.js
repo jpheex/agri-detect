@@ -522,12 +522,57 @@ function farmerHeadline(data) {
 
 function farmerAdviceBlock(data) {
   const health = renderHealthNotice(data);
-  const weather = renderWeatherWarning(data);
+  const weather = renderWeatherContext(data);
   const ipm = renderIpmSections(data);
   if (ipm) return `${health}${weather}${ipm}`;
   const treat = data.treatment ? `<p><strong>建議處理：</strong>${escapeHtml(data.treatment)}</p>` : "";
   const prev = data.prevention ? `<p><strong>平常注意：</strong>${escapeHtml(data.prevention)}</p>` : "";
   return `${health}${weather}<div class="farmer-advice">${treat}${prev}</div>`;
+}
+
+function renderWeather7dCard(report) {
+  if (!report?.summary_7d?.days?.length) return "";
+  const s = report.summary_7d;
+  const stress = (report.environmental_stress || [])
+    .map(
+      (item) =>
+        `<div class="weather-stress-item stress-${String(item.severity).toLowerCase()}">
+          <strong>${escapeHtml(item.label)}</strong>
+          <p>${escapeHtml(item.description)}</p>
+          <p class="weather-hint">${escapeHtml(item.management_advice)}</p>
+        </div>`
+    )
+    .join("");
+  return `
+    <div class="weather-7d-card">
+      <h4>🌦️ 您這裡過去7天天氣</h4>
+      <div class="weather-7d-stats">
+        <div class="stat-box"><strong>${s.avg_temperature}°C</strong>平均溫度</div>
+        <div class="stat-box"><strong>${s.avg_humidity}%</strong>平均濕度</div>
+        <div class="stat-box"><strong>${s.total_precipitation_mm}mm</strong>總雨量</div>
+      </div>
+      <p class="muted weather-7d-flags">
+        連續下雨 ${s.consecutive_rain_days} 天 · 連續高溫 ${s.consecutive_hot_days} 天 · 偏乾燥 ${s.consecutive_dry_days} 天
+      </p>
+      ${stress ? `<div class="weather-stress-list">${stress}</div>` : "<p class='muted'>目前環境壓力不大。</p>"}
+    </div>`;
+}
+
+function renderWeatherContext(data) {
+  const report = data.agri_weather_ai_proactive_warning;
+  if (!report) return "";
+  const card = renderWeather7dCard(report);
+  const risks = (report.risk_assessments || [])
+    .filter((item) => item.risk_level === "HIGH" || item.risk_level === "MEDIUM")
+    .map(
+      (item) =>
+        `<div class="weather-risk-item weather-medium">
+          <strong>病害風險：${escapeHtml(item.disease_name)}</strong>
+          <p>${escapeHtml(item.trigger_reason)}</p>
+        </div>`
+    )
+    .join("");
+  return `${card}${risks ? `<div class="weather-warning-section">${risks}</div>` : ""}`;
 }
 
 function renderTechnicalDetails(data) {
@@ -929,6 +974,27 @@ function requestFarmLocation(forceRefresh = false) {
   });
 }
 
+async function loadWeatherSummary(cropName = "") {
+  const box = document.getElementById("weather-7d-summary");
+  if (!box || useLocal) return;
+  const loc = await requestFarmLocation();
+  if (!loc) {
+    box.textContent = "請允許定位，才能顯示7天天氣";
+    return;
+  }
+  box.innerHTML = "<p class='muted'>載入天氣中…</p>";
+  try {
+    const crop = cropName?.trim() || document.getElementById("user-crop")?.value?.trim() || "通用作物";
+    const url = `/api/weather/summary?lat=${encodeURIComponent(loc.lat)}&lon=${encodeURIComponent(loc.lon)}&crop_name=${encodeURIComponent(crop)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("天氣載入失敗");
+    const data = await res.json();
+    box.innerHTML = renderWeather7dCard(data);
+  } catch (err) {
+    box.textContent = err.message || "無法載入天氣";
+  }
+}
+
 async function autoFillMonitorLocation(forceRefresh = false) {
   const input = document.getElementById("monitor-label");
   const statusEl = document.getElementById("monitor-gps-status");
@@ -945,10 +1011,11 @@ async function autoFillMonitorLocation(forceRefresh = false) {
   }
 
   input.value = loc.label || formatCoordLabel(loc.lat, loc.lon);
-  input.placeholder = "可手動修改";
+  input.placeholder = "";
   if (statusEl) {
     statusEl.textContent = `已定位 ${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}`;
   }
+  await loadWeatherSummary();
 }
 
 async function identifyPhotos(organFiles, userCrop) {
@@ -1617,6 +1684,7 @@ async function loadVerifyPanel() {
   }
   loadWeatherMonitors();
   autoFillMonitorLocation();
+  document.getElementById("user-crop")?.addEventListener("change", () => loadWeatherSummary());
   window.useLocal = useLocal;
   window.OfflineSync?.updateOfflineBanner();
 })();

@@ -173,6 +173,18 @@ async def geocode_reverse(
     return await reverse_geocode_label(lat, lon)
 
 
+@app.get("/api/weather/summary")
+async def weather_summary(
+    lat: float = Query(..., ge=-90, le=90),
+    lon: float = Query(..., ge=-180, le=180),
+    crop_name: str = Query("通用作物", max_length=100),
+):
+    """依 GPS 回傳過去7天天氣摘要與環境壓力評估。"""
+    engine = AgriWeatherAIEngine()
+    report = await engine.evaluate_farm_health_risk(crop_name.strip() or "通用作物", lat, lon)
+    return report.model_dump(mode="json")
+
+
 @app.get("/api/weather/risk")
 async def weather_risk(
     crop_name: str = Query(..., min_length=1, max_length=100),

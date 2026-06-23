@@ -1179,3 +1179,72 @@ textarea {
   align-items: center;
   margin-top: 0.5rem;
 }
+
+.weather-7d-summary {
+  margin: 0.75rem 0;
+}
+
+.weather-7d-card {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fcfa;
+}
+
+.weather-7d-card h4 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+}
+
+.weather-7d-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.weather-7d-stats .stat-box {
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.weather-7d-stats .stat-box strong {
+  font-size: 1.1rem;
+}
+
+.weather-7d-flags {
+  margin: 0.35rem 0 0.65rem;
+  font-size: 0.92rem;
+}
+
+.weather-stress-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.weather-stress-item {
+  padding: 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.weather-stress-item.stress-high {
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.weather-stress-item.stress-medium {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.weather-subscribe-fold {
+  margin-top: 0.75rem;
+}
+
+#monitor-label[readonly] {
+  background: #f3f4f6;
+}

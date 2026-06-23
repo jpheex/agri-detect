@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,39 @@ class PlantWeatherWarningReport(BaseModel):
     crop_name: str
     current_weather: MicroWeatherData
     risk_assessments: list[DiseaseRiskAssessment]
+    summary_7d: "WeatherSummary7d | None" = None
+    environmental_stress: list["EnvironmentalStressItem"] = Field(default_factory=list)
+
+
+class DailyWeatherRecord(BaseModel):
+    date: str
+    temp_min: float
+    temp_max: float
+    temp_mean: float
+    humidity_mean: float
+    precipitation_mm: float
+
+
+class WeatherSummary7d(BaseModel):
+    days: list[DailyWeatherRecord] = Field(default_factory=list)
+    avg_temperature: float = 0.0
+    avg_humidity: float = 0.0
+    total_precipitation_mm: float = 0.0
+    consecutive_rain_days: int = 0
+    consecutive_hot_days: int = 0
+    consecutive_dry_days: int = 0
+    data_source: str = "open-meteo"
+
+
+class EnvironmentalStressItem(BaseModel):
+    stress_type: str
+    label: str
+    severity: str
+    description: str
+    management_advice: str
+
+
+PlantWeatherWarningReport.model_rebuild()
 
 
 def _risk_level_label(level: str) -> str:
@@ -122,20 +156,193 @@ def estimate_leaf_wetness_hours(
 
 
 def format_weather_context_for_gemini(report: PlantWeatherWarningReport) -> str:
-    """將微氣象預警轉為 Gemini 診斷上下文。"""
+    """將微氣象與7天環境摘要轉為 Gemini 診斷上下文。"""
     w = report.current_weather
     lines = [
-        "【微氣象環境上下文（Agri-Weather AI）】",
+        "【田間環境上下文（含過去7天天氣）】",
         f"作物：{report.crop_name}",
-        f"溫度 {w.temperature}°C、相對濕度 {w.humidity}%、24h 雨量 {w.rainfall_24h} mm",
-        f"葉面連續濕潤約 {w.leaf_wetness_hours} 小時、未來降雨機率 {int(w.forecast_rain_prob * 100)}%",
+        f"目前：溫度 {w.temperature}°C、濕度 {w.humidity}%、24h 雨量 {w.rainfall_24h} mm",
+        f"葉面連續濕潤約 {w.leaf_wetness_hours} 小時",
     ]
+    if report.summary_7d and report.summary_7d.days:
+        s = report.summary_7d
+        lines.extend(
+            [
+                f"過去7天平均溫度 {s.avg_temperature}°C、平均濕度 {s.avg_humidity}%",
+                f"7天總雨量 {s.total_precipitation_mm} mm",
+                f"連續下雨 {s.consecutive_rain_days} 天、連續高溫 {s.consecutive_hot_days} 天、偏乾燥 {s.consecutive_dry_days} 天",
+            ]
+        )
+    for item in report.environmental_stress:
+        lines.append(f"- 環境壓力【{item.label}】{item.description}。改善：{item.management_advice}")
     for item in report.risk_assessments:
         lines.append(
-            f"- {item.disease_name}：{_risk_level_label(item.risk_level)}（{item.risk_score:.0%}）— {item.trigger_reason}"
+            f"- 病害風險 {item.disease_name}：{_risk_level_label(item.risk_level)} — {item.trigger_reason}"
         )
-    lines.append("請結合上述環境條件進行鑑別，排除或支持相關病蟲害假設。")
+    lines.append(
+        "請結合上述環境條件鑑別：區分病害/蟲害與生理障礙（如連續下雨、積水缺氧、連續高溫、過乾）。"
+        "若症狀可能由環境造成，請在診斷與建議中說明，並給改善田間環境的具體做法。"
+    )
     return "\n".join(lines)
+
+
+def _max_consecutive_streak(values: list[bool]) -> int:
+    best = current = 0
+    for flag in values:
+        if flag:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 0
+    return best
+
+
+def assess_environmental_stress(summary: WeatherSummary7d) -> list[EnvironmentalStressItem]:
+    items: list[EnvironmentalStressItem] = []
+    if not summary.days:
+        return items
+
+    if summary.consecutive_rain_days >= 3:
+        sev = "HIGH" if summary.consecutive_rain_days >= 5 else "MEDIUM"
+        items.append(
+            EnvironmentalStressItem(
+                stress_type="continuous_rain",
+                label="連續下雨",
+                severity=sev,
+                description=f"過去7天有 {summary.consecutive_rain_days} 天降雨（總雨量 {summary.total_precipitation_mm} mm）",
+                management_advice="加強排水溝、避免積水；雨後通風降濕；注意真菌與細菌性病害，必要時預防性保護。",
+            )
+        )
+    if summary.consecutive_hot_days >= 3:
+        sev = "HIGH" if summary.consecutive_hot_days >= 5 else "MEDIUM"
+        items.append(
+            EnvironmentalStressItem(
+                stress_type="continuous_heat",
+                label="連續高溫",
+                severity=sev,
+                description=f"過去7天有 {summary.consecutive_hot_days} 天最高溫 ≥ 32°C",
+                management_advice="早晚澆水降溫、搭遮陰網；避免中午施肥或修剪；注意日灼、熱害與乾燥型蟲害（如葉蟎）。",
+            )
+        )
+    if summary.avg_humidity >= 88.0:
+        items.append(
+            EnvironmentalStressItem(
+                stress_type="too_humid",
+                label="環境太潮濕",
+                severity="HIGH" if summary.avg_humidity >= 92.0 else "MEDIUM",
+                description=f"7天平均相對濕度 {summary.avg_humidity}%",
+                management_advice="增加通風、適度修剪下位葉；避免傍晚澆水；高濕易誘發白粉病、晚疫病、細菌性溃疡。",
+            )
+        )
+    if summary.consecutive_dry_days >= 4 or summary.avg_humidity <= 58.0:
+        items.append(
+            EnvironmentalStressItem(
+                stress_type="too_dry",
+                label="環境太乾燥",
+                severity="MEDIUM" if summary.avg_humidity > 50 else "HIGH",
+                description=(
+                    f"7天平均濕度 {summary.avg_humidity}%，"
+                    f"偏乾燥天數 {summary.consecutive_dry_days} 天"
+                ),
+                management_advice="穩定灌溉、地面覆蓋保濕；乾燥易有葉蟎、蚜蟲及缺水性萎蔫（非病害）。",
+            )
+        )
+    return items
+
+
+async def fetch_weather_summary_7d(lat: float, lon: float) -> WeatherSummary7d:
+    """以 Open-Meteo 取得過去7天日資料（免 API Key）。"""
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.get(
+                "https://api.open-meteo.com/v1/forecast",
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "past_days": 7,
+                    "forecast_days": 0,
+                    "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,relative_humidity_2m_mean",
+                    "timezone": "Asia/Taipei",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except Exception:
+        return _simulated_weather_summary_7d(lat, lon)
+
+    daily = payload.get("daily") or {}
+    dates = daily.get("time") or []
+    tmax = daily.get("temperature_2m_max") or []
+    tmin = daily.get("temperature_2m_min") or []
+    precip = daily.get("precipitation_sum") or []
+    humidity = daily.get("relative_humidity_2m_mean") or []
+
+    days: list[DailyWeatherRecord] = []
+    for i, date_str in enumerate(dates):
+        try:
+            tx = float(tmax[i]) if i < len(tmax) and tmax[i] is not None else 25.0
+            tn = float(tmin[i]) if i < len(tmin) and tmin[i] is not None else 18.0
+            pr = float(precip[i]) if i < len(precip) and precip[i] is not None else 0.0
+            hm = float(humidity[i]) if i < len(humidity) and humidity[i] is not None else 70.0
+        except (TypeError, ValueError):
+            continue
+        days.append(
+            DailyWeatherRecord(
+                date=date_str,
+                temp_min=round(tn, 1),
+                temp_max=round(tx, 1),
+                temp_mean=round((tx + tn) / 2, 1),
+                humidity_mean=round(hm, 1),
+                precipitation_mm=round(pr, 1),
+            )
+        )
+
+    if not days:
+        return _simulated_weather_summary_7d(lat, lon)
+
+    avg_temp = round(sum(d.temp_mean for d in days) / len(days), 1)
+    avg_hum = round(sum(d.humidity_mean for d in days) / len(days), 1)
+    total_rain = round(sum(d.precipitation_mm for d in days), 1)
+    rain_flags = [d.precipitation_mm >= 1.0 for d in days]
+    hot_flags = [d.temp_max >= 32.0 for d in days]
+    dry_flags = [d.precipitation_mm < 0.5 and d.humidity_mean < 62.0 for d in days]
+
+    return WeatherSummary7d(
+        days=days,
+        avg_temperature=avg_temp,
+        avg_humidity=avg_hum,
+        total_precipitation_mm=total_rain,
+        consecutive_rain_days=_max_consecutive_streak(rain_flags),
+        consecutive_hot_days=_max_consecutive_streak(hot_flags),
+        consecutive_dry_days=_max_consecutive_streak(dry_flags),
+        data_source="open-meteo",
+    )
+
+
+def _simulated_weather_summary_7d(lat: float, lon: float) -> WeatherSummary7d:
+    """無法連線時的示意資料。"""
+    seed = int(abs(lat * 100) + abs(lon * 100)) % 5
+    days = [
+        DailyWeatherRecord(
+            date=f"D{i}",
+            temp_min=20 + seed,
+            temp_max=28 + seed,
+            temp_mean=24 + seed,
+            humidity_mean=75 + seed * 2,
+            precipitation_mm=5.0 if i % 2 == 0 else 0.5,
+        )
+        for i in range(7)
+    ]
+    return WeatherSummary7d(
+        days=days,
+        avg_temperature=24 + seed,
+        avg_humidity=80 + seed * 2,
+        total_precipitation_mm=22.0,
+        consecutive_rain_days=2,
+        consecutive_hot_days=1,
+        consecutive_dry_days=1,
+        data_source="simulation",
+    )
 
 
 class AgriWeatherAIEngine:
@@ -294,7 +501,11 @@ class AgriWeatherAIEngine:
     async def evaluate_farm_health_risk(
         self, crop_name: str, lat: float, lon: float
     ) -> PlantWeatherWarningReport:
-        weather_data = await self.fetch_current_weather_by_location(lat, lon)
+        weather_data, summary_7d = await asyncio.gather(
+            self.fetch_current_weather_by_location(lat, lon),
+            fetch_weather_summary_7d(lat, lon),
+        )
+        environmental_stress = assess_environmental_stress(summary_7d)
         normalized = crop_name.strip()
         risk_list: list[DiseaseRiskAssessment] = []
 
@@ -331,4 +542,6 @@ class AgriWeatherAIEngine:
             crop_name=crop_name,
             current_weather=weather_data,
             risk_assessments=risk_list,
+            summary_7d=summary_7d,
+            environmental_stress=environmental_stress,
         )

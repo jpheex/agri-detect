@@ -84,19 +84,23 @@
               </div>
             </details>
 
-            <details class="fold-panel">
-              <summary>🌦️ 天氣預警訂閱（選用）</summary>
+            <details class="fold-panel weather-location-panel" open>
+              <summary>🌦️ 您這裡最近的天氣（自動定位）</summary>
               <div class="weather-monitor-box">
-              <p class="muted">訂閱後系統每 3 小時掃描一次，高風險時推播至 LINE（需伺服器設定）。</p>
-              <label for="monitor-label">監測點位置（GPS 自動填入）</label>
+              <label for="monitor-label">目前位置</label>
               <div class="monitor-gps-row">
-                <input id="monitor-label" placeholder="正在讀取 GPS 定位…" />
+                <input id="monitor-label" placeholder="正在讀取 GPS 定位…" readonly />
                 <button type="button" id="refresh-monitor-gps-btn" class="btn btn-secondary btn-compact">重新定位</button>
               </div>
               <p id="monitor-gps-status" class="muted monitor-gps-status"></p>
-              <button type="button" id="register-monitor-btn" class="btn btn-secondary">訂閱此位置預警</button>
-              <div id="monitor-error" class="error"></div>
-              <div id="monitor-list" class="monitor-list"></div>
+              <div id="weather-7d-summary" class="weather-7d-summary muted">定位後顯示過去7天天氣…</div>
+              <details class="fold-details weather-subscribe-fold">
+                <summary>訂閱 LINE 天氣預警（選用）</summary>
+                <p class="muted">高風險時推播提醒（需伺服器設定）。</p>
+                <button type="button" id="register-monitor-btn" class="btn btn-secondary">訂閱此位置預警</button>
+                <div id="monitor-error" class="error"></div>
+                <div id="monitor-list" class="monitor-list"></div>
+              </details>
               </div>
             </details>
 
