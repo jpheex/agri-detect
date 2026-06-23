@@ -5,7 +5,10 @@ from PIL import Image
 
 from backend.database import (
     add_knowledge_index,
+    add_knowledge_rejection,
     get_identification,
+    list_identifications,
+    list_knowledge_rejections,
     upsert_knowledge_entry,
 )
 from backend.config import BASE_DIR
@@ -60,6 +63,7 @@ DEFAULT_PREVENTION = "保持田間通風、合理施肥、定期巡查，及早�
 MATCH_THRESHOLD = 0.82
 STRONG_MATCH_THRESHOLD = 0.88
 CONTEXT_MIN_SCORE = 0.75
+NEGATIVE_MATCH_THRESHOLD = 0.82
 
 SOURCE_TYPE_LABELS = {
     "training": "預防訓練",
@@ -264,6 +268,164 @@ async def sync_manual_correction(
             "prevention": advice[1],
         }
     )
+
+
+    )
+
+
+async def _store_rejection_from_record(
+    record: dict,
+    source_type: str,
+    base_dir: Path,
+) -> None:
+    stored_path = record["image_path"]
+    resolved = await _resolve_image_path(stored_path, base_dir)
+    if resolved is None:
+        return
+
+    vector = image_vector(resolved)
+    await add_knowledge_rejection(
+        {
+            "source_type": source_type,
+            "source_id": record["id"],
+            "image_path": stored_path,
+            "image_vector": vector_to_json(vector),
+            "rejected_crop": record["crop"],
+            "rejected_issue_type": record["issue_type"],
+            "rejected_issue_name": record["issue_name"],
+        }
+    )
+
+
+async def sync_rejected_identification(record_id: int, base_dir: Path) -> None:
+    record = await get_identification(record_id)
+    if not record:
+        return
+    await _store_rejection_from_record(record, "verified_reject", base_dir)
+
+
+async def sync_rejection_before_correction(record_id: int, base_dir: Path) -> None:
+    record = await get_identification(record_id)
+    if not record:
+        return
+    await _store_rejection_from_record(record, "correction_reject", base_dir)
+
+
+async def backfill_rejections_from_identifications(base_dir: Path, limit: int = 500) -> int:
+    """將既有標記為錯誤的辨識紀錄補進錯誤知識庫。"""
+    rows = await list_identifications(limit=limit)
+    count = 0
+    for row in rows:
+        if row.get("verified") != 0:
+            continue
+        await _store_rejection_from_record(row, "verified_reject", base_dir)
+        count += 1
+    return count
+
+
+def find_negative_matches(
+    query_vector: list[float],
+    rejection_rows: list[dict],
+    top_k: int = 3,
+    min_score: float = CONTEXT_MIN_SCORE,
+) -> list[tuple[dict, float]]:
+    scored: list[tuple[dict, float]] = []
+    for row in rejection_rows:
+        ref = vector_from_json(row.get("image_vector"))
+        if not ref:
+            continue
+        score = similarity(query_vector, ref)
+        if score >= min_score:
+            scored.append((row, score))
+    scored.sort(key=lambda item: item[1], reverse=True)
+    return scored[:top_k]
+
+
+def format_negative_context(matches: list[tuple[dict, float]]) -> str:
+    if not matches:
+        return ""
+    lines = [
+        "【已知錯誤案例 — 請避免重複判斷】",
+        "以下影像曾被使用者標記為「辨識錯誤」，請勿再次採用相同結論：",
+    ]
+    for index, (row, score) in enumerate(matches, start=1):
+        lines.append(
+            f"{index}. 相似度 {round(score * 100)}%：錯誤判斷為"
+            f"「{row['rejected_crop']} / {row['rejected_issue_type']} / {row['rejected_issue_name']}」"
+        )
+    lines.append("若新影像與上述案例相似，請改採其他診斷或降低信心並建議人工確認。")
+    return "\n".join(lines)
+
+
+def _matches_rejected_diagnosis(result: dict, rejection: dict) -> bool:
+    if _normalize_label(result.get("issue_name")) == _normalize_label(rejection.get("rejected_issue_name")):
+        return True
+    return (
+        _normalize_label(result.get("crop")) == _normalize_label(rejection.get("rejected_crop"))
+        and _normalize_label(result.get("issue_type")) == _normalize_label(rejection.get("rejected_issue_type"))
+    )
+
+
+def _conflicts_with_rejection(
+    result: dict,
+    negative_matches: list[tuple[dict, float]],
+) -> tuple[bool, dict | None, float]:
+    for rejection, score in negative_matches:
+        if score >= NEGATIVE_MATCH_THRESHOLD and _matches_rejected_diagnosis(result, rejection):
+            return True, rejection, score
+    return False, None, 0.0
+
+
+def guard_against_rejections(
+    result: dict,
+    negative_matches: list[tuple[dict, float]],
+    community_match: dict | None = None,
+) -> dict:
+    conflicts, rejection, neg_score = _conflicts_with_rejection(result, negative_matches)
+    if not conflicts:
+        if negative_matches:
+            result["negative_match_score"] = round(negative_matches[0][1], 2)
+        return result
+
+    avoided = {
+        "crop": rejection["rejected_crop"],
+        "issue_type": rejection["rejected_issue_type"],
+        "issue_name": rejection["rejected_issue_name"],
+        "match_score": round(neg_score, 2),
+    }
+
+    if community_match and float(community_match.get("match_score") or 0) >= MATCH_THRESHOLD:
+        if not _matches_rejected_diagnosis(community_match, rejection):
+            out = dict(community_match)
+            out["source"] = f"{community_match.get('source', '群眾知識庫')}（已避開已知錯誤）"
+            out["avoided_mistake"] = avoided
+            return out
+
+    blocked = dict(result)
+    blocked["blocked_diagnosis"] = {
+        "crop": result.get("crop"),
+        "issue_type": result.get("issue_type"),
+        "issue_name": result.get("issue_name"),
+    }
+    blocked["avoided_mistake"] = avoided
+    blocked["confidence"] = round(min(float(result.get("confidence") or 0.5), 0.42), 2)
+    blocked["issue_name"] = "待確認（與過往誤判案例相似）"
+    blocked["issue_type"] = "待確認"
+    blocked["treatment"] = "此影像與已知錯誤案例相似，系統已抑制原判斷。請手動更正或補充預防訓練樣本。"
+    blocked["prevention"] = "建議重新拍攝清晰特寫，並在成果驗收提供正確標籤以協助系統學習。"
+    blocked["source"] = "錯誤抑制（群眾驗收）"
+    blocked["review_required"] = True
+    return blocked
+
+
+def match_negative_context(
+    image_path: Path,
+    rejection_rows: list[dict],
+    top_k: int = 3,
+) -> tuple[list[tuple[dict, float]], str]:
+    query_vector = image_vector(image_path)
+    matches = find_negative_matches(query_vector, rejection_rows, top_k=top_k)
+    return matches, format_negative_context(matches)
 
 
 def find_top_matches(

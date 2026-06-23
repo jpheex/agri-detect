@@ -21,6 +21,7 @@ from backend.database import (
     list_identifications,
     list_knowledge_entries,
     list_knowledge_index,
+    list_knowledge_rejections,
     list_training_samples,
     save_farm_monitor,
     save_identification,
@@ -55,11 +56,16 @@ from backend.db_connection import diagnose_d1, use_d1
 from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
     STRONG_MATCH_THRESHOLD,
+    backfill_rejections_from_identifications,
+    guard_against_rejections,
     image_vector,
     match_context_from_image,
+    match_negative_context,
     predict,
     resolve_with_community,
     sync_manual_correction,
+    sync_rejected_identification,
+    sync_rejection_before_correction,
     sync_training_sample,
     sync_verified_identification,
     vector_to_json,
@@ -89,6 +95,7 @@ async def lifespan(_: FastAPI):
         (DATA_DIR / UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
         (DATA_DIR / TRAINING_FOLDER).mkdir(parents=True, exist_ok=True)
     await init_db()
+    await backfill_rejections_from_identifications(BASE_DIR)
     await init_offline_db()
     scheduler = start_weather_scheduler()
     yield
@@ -313,12 +320,16 @@ async def _run_identify(
 ) -> dict:
     index_rows = await list_knowledge_index()
     knowledge_entries = await list_knowledge_entries()
+    rejection_rows = await list_knowledge_rejections()
 
     community_match, community_context = match_context_from_image(saved_paths[0], index_rows)
+    negative_matches, negative_context = match_negative_context(saved_paths[0], rejection_rows)
 
     merged_notes = user_notes.strip()
     if community_context:
         merged_notes = f"{merged_notes}\n\n{community_context}".strip() if merged_notes else community_context
+    if negative_context:
+        merged_notes = f"{merged_notes}\n\n{negative_context}".strip() if merged_notes else negative_context
 
     weather_payload = None
     crop_for_weather = (user_provided_crop or "").strip() or "通用作物"
@@ -335,7 +346,7 @@ async def _run_identify(
             pass
 
     if community_match and float(community_match.get("match_score") or 0) >= STRONG_MATCH_THRESHOLD:
-        result = dict(community_match)
+        result = guard_against_rejections(dict(community_match), negative_matches, community_match)
         if weather_payload:
             result["agri_weather_ai_proactive_warning"] = weather_payload
         return result
@@ -350,6 +361,7 @@ async def _run_identify(
                 knowledge_entries=knowledge_entries,
             )
             result = resolve_with_community(result, community_match)
+            result = guard_against_rejections(result, negative_matches, community_match)
             if weather_payload:
                 result["agri_weather_ai_proactive_warning"] = weather_payload
             return result
@@ -358,6 +370,7 @@ async def _run_identify(
 
     # 後備：本機知識庫比對（僅用第一張影像）
     result = await predict(saved_paths[0], index_rows, knowledge_entries)
+    result = guard_against_rejections(result, negative_matches, community_match)
     if weather_payload:
         result["agri_weather_ai_proactive_warning"] = weather_payload
     return result
@@ -434,6 +447,8 @@ async def verify(record_id: int, is_correct: bool = Form(...)):
         raise HTTPException(status_code=404, detail="找不到紀錄")
     if is_correct:
         await sync_verified_identification(record_id, BASE_DIR)
+    else:
+        await sync_rejected_identification(record_id, BASE_DIR)
     return {"success": True}
 
 
@@ -454,6 +469,8 @@ async def correct(
 
     if not crop or not issue_name:
         raise HTTPException(status_code=400, detail="品種與問題名稱不可為空")
+
+    await sync_rejection_before_correction(record_id, BASE_DIR)
 
     ok = await correct_identification(
         record_id,
@@ -508,6 +525,7 @@ async def knowledge(limit: int = 100):
         "items": items,
         "entries": meta["entries"],
         "indexed_images": meta["indexed_images"],
+        "rejections": meta.get("rejections", 0),
     }
 
 

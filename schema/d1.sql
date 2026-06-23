@@ -51,6 +51,18 @@ CREATE TABLE IF NOT EXISTS knowledge_index (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS knowledge_rejections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL,
+    source_id INTEGER NOT NULL,
+    image_path TEXT NOT NULL,
+    image_vector TEXT NOT NULL,
+    rejected_crop TEXT NOT NULL,
+    rejected_issue_type TEXT NOT NULL,
+    rejected_issue_name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS farm_monitors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     label TEXT NOT NULL DEFAULT '',

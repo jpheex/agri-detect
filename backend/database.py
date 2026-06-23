@@ -197,12 +197,45 @@ async def list_knowledge_index(limit: int = 5000) -> list[dict]:
     )
 
 
+async def add_knowledge_rejection(entry: dict) -> None:
+    await execute(
+        "DELETE FROM knowledge_rejections WHERE source_type = ? AND source_id = ?",
+        (entry["source_type"], entry["source_id"]),
+    )
+    await execute(
+        """
+        INSERT INTO knowledge_rejections
+        (source_type, source_id, image_path, image_vector,
+         rejected_crop, rejected_issue_type, rejected_issue_name)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            entry["source_type"],
+            entry["source_id"],
+            entry["image_path"],
+            entry["image_vector"],
+            entry["rejected_crop"],
+            entry["rejected_issue_type"],
+            entry["rejected_issue_name"],
+        ),
+    )
+
+
+async def list_knowledge_rejections(limit: int = 5000) -> list[dict]:
+    return await fetchall(
+        "SELECT * FROM knowledge_rejections ORDER BY id DESC LIMIT ?",
+        (limit,),
+    )
+
+
 async def get_knowledge_stats() -> dict:
     entries_row = await fetchone("SELECT COUNT(*) AS count FROM knowledge_entries")
     images_row = await fetchone("SELECT COUNT(*) AS count FROM knowledge_index")
+    rejections_row = await fetchone("SELECT COUNT(*) AS count FROM knowledge_rejections")
     entries = (entries_row or {}).get("count", 0) or 0
     images = (images_row or {}).get("count", 0) or 0
-    return {"entries": entries, "indexed_images": images}
+    rejections = (rejections_row or {}).get("count", 0) or 0
+    return {"entries": entries, "indexed_images": images, "rejections": rejections}
 
 
 async def save_farm_monitor(record: dict) -> int:

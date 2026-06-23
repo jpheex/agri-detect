@@ -45,9 +45,11 @@ const LS_IDENT = "agri_identifications";
 const LS_TRAIN = "agri_training";
 const LS_KNOWLEDGE = "agri_knowledge_entries";
 const LS_INDEX = "agri_knowledge_index";
+const LS_REJECTIONS = "agri_knowledge_rejections";
 const LS_APP_VERSION = "agri_app_version";
 const MATCH_THRESHOLD = 0.82;
 const STRONG_MATCH_THRESHOLD = 0.88;
+const NEGATIVE_MATCH_THRESHOLD = 0.82;
 
 const COMMUNITY_SOURCE_LABELS = {
   training: "群眾知識庫（預防訓練）",
@@ -287,6 +289,89 @@ function addLocalIndex(entry) {
   writeLocal(LS_INDEX, items);
 }
 
+function normalizeLabel(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function matchesRejectedDiagnosis(result, rejection) {
+  if (normalizeLabel(result.issue_name) === normalizeLabel(rejection.rejected_issue_name)) return true;
+  return (
+    normalizeLabel(result.crop) === normalizeLabel(rejection.rejected_crop) &&
+    normalizeLabel(result.issue_type) === normalizeLabel(rejection.rejected_issue_type)
+  );
+}
+
+function findLocalNegativeMatches(queryVector, topK = 3) {
+  const rows = readLocal(LS_REJECTIONS);
+  const scored = rows
+    .map((row) => ({ row, score: similarity(queryVector, row.image_vector) }))
+    .filter((item) => item.score >= 0.75)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+  return scored;
+}
+
+function guardLocalAgainstRejections(result, negativeMatches, communityMatch = null) {
+  const hit = negativeMatches.find(
+    (item) => item.score >= NEGATIVE_MATCH_THRESHOLD && matchesRejectedDiagnosis(result, item.row)
+  );
+  if (!hit) {
+    if (negativeMatches.length) result.negative_match_score = negativeMatches[0].score;
+    return result;
+  }
+
+  const avoided = {
+    crop: hit.row.rejected_crop,
+    issue_type: hit.row.rejected_issue_type,
+    issue_name: hit.row.rejected_issue_name,
+    match_score: hit.score,
+  };
+
+  if (
+    communityMatch &&
+    communityMatch.match_score >= MATCH_THRESHOLD &&
+    !matchesRejectedDiagnosis(communityMatch, hit.row)
+  ) {
+    return {
+      ...communityMatch,
+      source: `${communityMatch.source}（已避開已知錯誤）`,
+      avoided_mistake: avoided,
+    };
+  }
+
+  return {
+    ...result,
+    blocked_diagnosis: {
+      crop: result.crop,
+      issue_type: result.issue_type,
+      issue_name: result.issue_name,
+    },
+    avoided_mistake: avoided,
+    confidence: Math.min(result.confidence ?? 0.5, 0.42),
+    issue_name: "待確認（與過往誤判案例相似）",
+    issue_type: "待確認",
+    treatment: "此影像與已知錯誤案例相似，系統已抑制原判斷。請手動更正或補充預防訓練樣本。",
+    prevention: "建議重新拍攝清晰特寫，並在成果驗收提供正確標籤以協助系統學習。",
+    source: "錯誤抑制（群眾驗收）",
+    review_required: true,
+  };
+}
+
+async function syncLocalRejected(record) {
+  const vector = await imageVectorFromDataUrl(record.image_url);
+  const items = readLocal(LS_REJECTIONS).filter((item) => item.source_id !== record.id);
+  items.unshift({
+    source_type: "verified_reject",
+    source_id: record.id,
+    image_url: record.image_url,
+    image_vector: vector,
+    rejected_crop: record.crop,
+    rejected_issue_type: record.issue_type,
+    rejected_issue_name: record.issue_name,
+  });
+  writeLocal(LS_REJECTIONS, items);
+}
+
 async function syncLocalTraining(record) {
   const [treatment, prevention] = resolveAdvice(
     record.crop,
@@ -336,6 +421,7 @@ async function syncLocalVerified(record) {
 async function localPredict(file) {
   const queryVector = await imageVectorFromDataUrl(await fileToDataUrl(file));
   const indexRows = readLocal(LS_INDEX);
+  const negativeMatches = findLocalNegativeMatches(queryVector);
   let best = null;
   let bestScore = 0;
 
@@ -348,16 +434,29 @@ async function localPredict(file) {
   }
 
   if (best && bestScore >= MATCH_THRESHOLD) {
-    return {
-      crop: best.crop,
-      issue_type: best.issue_type,
-      issue_name: best.issue_name,
-      treatment: best.treatment,
-      prevention: best.prevention,
-      confidence: Math.min(0.99, 0.7 + bestScore * 0.29),
-      source: communitySourceLabel(best.source_type),
-      match_score: bestScore,
-    };
+    const communityResult = guardLocalAgainstRejections(
+      {
+        crop: best.crop,
+        issue_type: best.issue_type,
+        issue_name: best.issue_name,
+        treatment: best.treatment,
+        prevention: best.prevention,
+        confidence: Math.min(0.99, 0.7 + bestScore * 0.29),
+        source: communitySourceLabel(best.source_type),
+        match_score: bestScore,
+      },
+      negativeMatches,
+      {
+        crop: best.crop,
+        issue_type: best.issue_type,
+        issue_name: best.issue_name,
+        treatment: best.treatment,
+        prevention: best.prevention,
+        match_score: bestScore,
+        source: communitySourceLabel(best.source_type),
+      }
+    );
+    return communityResult;
   }
 
   const entries = readLocal(LS_KNOWLEDGE);
@@ -396,7 +495,10 @@ async function localPredict(file) {
   }
 
   const item = BASE_KNOWLEDGE[0];
-  return { ...item, confidence: 0.52, source: "內建知識庫（低信心）" };
+  return guardLocalAgainstRejections(
+    { ...item, confidence: 0.52, source: "內建知識庫（低信心）" },
+    negativeMatches
+  );
 }
 
 function renderIpmSections(data) {
@@ -504,6 +606,12 @@ function renderResultCard(data, corrected = false) {
   const communitySuggest = data.community_suggestion
     ? `<p class="muted">群眾知識庫參考：${escapeHtml(data.community_suggestion.issue_name)}（${Math.round(data.community_suggestion.match_score * 100)}%）</p>`
     : "";
+  const avoidedMistake = data.avoided_mistake
+    ? `<p class="warning-text">已避開過往誤判：${escapeHtml(data.avoided_mistake.issue_name)}（相似度 ${Math.round(data.avoided_mistake.match_score * 100)}%）</p>`
+    : "";
+  const reviewNotice = data.review_required
+    ? `<p class="warning-text">此結果需人工確認，請補充正確標籤以協助系統學習。</p>`
+    : "";
 
   return `
     <div class="result-card">
@@ -514,6 +622,8 @@ function renderResultCard(data, corrected = false) {
       信心度 ${Math.round(data.confidence * 100)}%</p>
       ${communityHint}
       ${communitySuggest}
+      ${avoidedMistake}
+      ${reviewNotice}
       <p><strong>植物：</strong>${escapeHtml(data.crop)}</p>
       ${scientific}
       <p><strong>診斷：</strong>${escapeHtml(data.issue_name)}</p>
@@ -602,6 +712,8 @@ async function submitCorrection(recordId, formData) {
   const items = readLocal(LS_IDENT);
   const target = items.find((i) => i.id === recordId);
   if (!target) throw new Error("找不到紀錄");
+
+  await syncLocalRejected(target);
 
   const updated = {
     ...target,
@@ -883,6 +995,7 @@ async function verifyRecord(id, isCorrect) {
   const items = readLocal(LS_IDENT);
   const target = items.find((item) => item.id === id);
   if (target && isCorrect) await syncLocalVerified(target);
+  if (target && !isCorrect) await syncLocalRejected(target);
   writeLocal(
     LS_IDENT,
     items.map((item) => (item.id === id ? { ...item, verified: isCorrect ? 1 : 0 } : item))
@@ -1279,7 +1392,8 @@ async function loadTrainingPanel() {
 
   document.getElementById("knowledge-summary").innerHTML = `
     <div class="stat-box"><strong>${entryCount}</strong>知識類別</div>
-    <div class="stat-box"><strong>${imageCount}</strong>參考影像</div>`;
+    <div class="stat-box"><strong>${imageCount}</strong>參考影像</div>
+    <div class="stat-box"><strong>${knowledge.rejections ?? 0}</strong>錯誤記憶</div>`;
 
   const knowledgeList = document.getElementById("knowledge-list");
   const entries = knowledge.items || (Array.isArray(knowledge.entries) ? knowledge.entries : []);
