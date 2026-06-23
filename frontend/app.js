@@ -1243,6 +1243,7 @@ const identifyResetBtn = document.getElementById("identify-reset-btn");
 const identifyError = document.getElementById("identify-error");
 const identifyResult = document.getElementById("identify-result");
 const userCropInput = document.getElementById("user-crop");
+let stopCropVoiceListening = null;
 let identifyInProgress = false;
 let identifyCompleted = false;
 
@@ -1255,6 +1256,9 @@ function setOrganInputsDisabled(disabled) {
     slot.style.opacity = disabled ? "0.65" : "";
   });
   if (userCropInput) userCropInput.disabled = disabled;
+  const micBtn = document.getElementById("user-crop-mic");
+  micBtn?.toggleAttribute("disabled", disabled);
+  if (disabled) stopCropVoiceListening?.();
 }
 
 function updateIdentifyButtonState() {
@@ -1286,6 +1290,7 @@ function resetIdentifyPanel() {
     slot.classList.remove("has-photo");
   });
   if (userCropInput) userCropInput.value = "";
+  stopCropVoiceListening?.();
   identifyResult.innerHTML = "";
   identifyError.textContent = "";
   lastIdentifyData = null;
@@ -1685,9 +1690,85 @@ async function loadVerifyPanel() {
   loadWeatherMonitors();
   autoFillMonitorLocation();
   document.getElementById("user-crop")?.addEventListener("change", () => loadWeatherSummary());
+  initCropVoiceInput();
   window.useLocal = useLocal;
   window.OfflineSync?.updateOfflineBanner();
 })();
+
+function initCropVoiceInput() {
+  const input = document.getElementById("user-crop");
+  const micBtn = document.getElementById("user-crop-mic");
+  if (!input || !micBtn) return;
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    micBtn.hidden = true;
+    return;
+  }
+
+  let recognition = null;
+  let listening = false;
+
+  function stopListening() {
+    if (!listening) return;
+    listening = false;
+    micBtn.classList.remove("is-listening");
+    micBtn.setAttribute("aria-pressed", "false");
+    try {
+      recognition?.stop();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function startListening() {
+    if (micBtn.disabled || listening) return;
+    recognition = new SpeechRecognition();
+    recognition.lang = "zh-TW";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    recognition.onstart = () => {
+      listening = true;
+      micBtn.classList.add("is-listening");
+      micBtn.setAttribute("aria-pressed", "true");
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0]?.[0]?.transcript?.trim();
+      if (transcript) {
+        input.value = transcript;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
+    recognition.onerror = (event) => {
+      stopListening();
+      if (event.error === "aborted" || event.error === "no-speech") return;
+      const msg =
+        event.error === "not-allowed"
+          ? "請允許麥克風權限才能用語音輸入"
+          : "語音辨識失敗，請改用手動輸入";
+      if (identifyError) identifyError.textContent = msg;
+    };
+
+    recognition.onend = () => stopListening();
+
+    try {
+      recognition.start();
+    } catch {
+      stopListening();
+    }
+  }
+
+  micBtn.addEventListener("click", () => {
+    if (listening) stopListening();
+    else startListening();
+  });
+
+  stopCropVoiceListening = stopListening;
+}
 
 function initAdvancedMode() {
   const toggle = document.getElementById("toggle-advanced");

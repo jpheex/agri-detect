@@ -55,8 +55,24 @@
         </div>
         <div class="grid-2 identify-layout">
           <div class="identify-input-col">
-            <label for="user-crop">我知道是什麼作物（可不填）</label>
-            <input id="user-crop" name="user_crop" placeholder="例如：番茄、蘋果" />
+            <div class="crop-hint-field">
+              <label for="user-crop">我知道是什麼作物（可不填）</label>
+              <div class="crop-input-row">
+                <input id="user-crop" name="user_crop" placeholder="例如：番茄、蘋果" autocomplete="off" />
+                <button
+                  type="button"
+                  id="user-crop-mic"
+                  class="crop-mic-btn"
+                  aria-label="語音輸入作物名稱"
+                  aria-pressed="false"
+                  title="點一下說出作物名稱"
+                >
+                  <svg class="crop-mic-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor">
+                    <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.71V21h2v-3.29A7 7 0 0 0 19 11h-2z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
 
             <details class="fold-panel">
               <summary>🩺 沒網路時怎麼辦？</summary>
