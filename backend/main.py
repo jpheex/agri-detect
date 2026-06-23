@@ -54,8 +54,11 @@ from backend.cloudflare_config import (
 from backend.db_connection import diagnose_d1, use_d1
 from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
+    STRONG_MATCH_THRESHOLD,
     image_vector,
+    match_context_from_image,
     predict,
+    resolve_with_community,
     sync_manual_correction,
     sync_training_sample,
     sync_verified_identification,
@@ -311,7 +314,12 @@ async def _run_identify(
     index_rows = await list_knowledge_index()
     knowledge_entries = await list_knowledge_entries()
 
+    community_match, community_context = match_context_from_image(saved_paths[0], index_rows)
+
     merged_notes = user_notes.strip()
+    if community_context:
+        merged_notes = f"{merged_notes}\n\n{community_context}".strip() if merged_notes else community_context
+
     weather_payload = None
     crop_for_weather = (user_provided_crop or "").strip() or "通用作物"
     if latitude is not None and longitude is not None:
@@ -326,6 +334,12 @@ async def _run_identify(
         except Exception:
             pass
 
+    if community_match and float(community_match.get("match_score") or 0) >= STRONG_MATCH_THRESHOLD:
+        result = dict(community_match)
+        if weather_payload:
+            result["agri_weather_ai_proactive_warning"] = weather_payload
+        return result
+
     if is_configured():
         try:
             result = await analyze_plant_health_for_app(
@@ -335,6 +349,7 @@ async def _run_identify(
                 user_notes=merged_notes or None,
                 knowledge_entries=knowledge_entries,
             )
+            result = resolve_with_community(result, community_match)
             if weather_payload:
                 result["agri_weather_ai_proactive_warning"] = weather_payload
             return result
@@ -487,9 +502,13 @@ async def stats():
 
 @app.get("/api/knowledge")
 async def knowledge(limit: int = 100):
-    entries = await list_knowledge_entries(limit=limit)
+    items = await list_knowledge_entries(limit=limit)
     meta = await get_knowledge_stats()
-    return {"entries": entries, **meta}
+    return {
+        "items": items,
+        "entries": meta["entries"],
+        "indexed_images": meta["indexed_images"],
+    }
 
 
 @app.post("/api/training")

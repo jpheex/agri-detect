@@ -47,6 +47,17 @@ const LS_KNOWLEDGE = "agri_knowledge_entries";
 const LS_INDEX = "agri_knowledge_index";
 const LS_APP_VERSION = "agri_app_version";
 const MATCH_THRESHOLD = 0.82;
+const STRONG_MATCH_THRESHOLD = 0.88;
+
+const COMMUNITY_SOURCE_LABELS = {
+  training: "群眾知識庫（預防訓練）",
+  verified: "群眾知識庫（成果驗收）",
+  corrected: "群眾知識庫（手動更正）",
+};
+
+function communitySourceLabel(sourceType) {
+  return COMMUNITY_SOURCE_LABELS[sourceType] || "群眾知識庫";
+}
 
 let useLocal = false;
 
@@ -337,9 +348,6 @@ async function localPredict(file) {
   }
 
   if (best && bestScore >= MATCH_THRESHOLD) {
-    let source = "驗收確認資料";
-    if (best.source_type === "training") source = "網站訓練資料";
-    if (best.source_type === "corrected") source = "手動更正資料";
     return {
       crop: best.crop,
       issue_type: best.issue_type,
@@ -347,7 +355,7 @@ async function localPredict(file) {
       treatment: best.treatment,
       prevention: best.prevention,
       confidence: Math.min(0.99, 0.7 + bestScore * 0.29),
-      source,
+      source: communitySourceLabel(best.source_type),
       match_score: bestScore,
     };
   }
@@ -490,6 +498,13 @@ function renderResultCard(data, corrected = false) {
       ? `<p><strong>建議：</strong>${data.action_plan.map((item) => escapeHtml(item)).join("；")}</p>`
       : "";
 
+  const communityHint = data.community_match_score
+    ? `<p class="muted">群眾知識庫相似度：${Math.round(data.community_match_score * 100)}%</p>`
+    : "";
+  const communitySuggest = data.community_suggestion
+    ? `<p class="muted">群眾知識庫參考：${escapeHtml(data.community_suggestion.issue_name)}（${Math.round(data.community_suggestion.match_score * 100)}%）</p>`
+    : "";
+
   return `
     <div class="result-card">
       <h3>辨識結果 ${source}</h3>
@@ -497,6 +512,8 @@ function renderResultCard(data, corrected = false) {
       ${weatherBlock}
       <p><span class="badge ${badgeClass(data.issue_type)}">${data.issue_type}</span>
       信心度 ${Math.round(data.confidence * 100)}%</p>
+      ${communityHint}
+      ${communitySuggest}
       <p><strong>植物：</strong>${escapeHtml(data.crop)}</p>
       ${scientific}
       <p><strong>診斷：</strong>${escapeHtml(data.issue_name)}</p>
@@ -1254,7 +1271,10 @@ document.getElementById("export-btn").addEventListener("click", () => {
 
 async function loadTrainingPanel() {
   const [items, knowledge] = await Promise.all([fetchTrainingList(), fetchKnowledge()]);
-  const entryCount = knowledge.entries?.length ?? knowledge.entries_count ?? 0;
+  const entryCount =
+    typeof knowledge.entries === "number"
+      ? knowledge.entries
+      : knowledge.items?.length ?? knowledge.entries_count ?? 0;
   const imageCount = knowledge.indexed_images ?? 0;
 
   document.getElementById("knowledge-summary").innerHTML = `
@@ -1262,7 +1282,7 @@ async function loadTrainingPanel() {
     <div class="stat-box"><strong>${imageCount}</strong>參考影像</div>`;
 
   const knowledgeList = document.getElementById("knowledge-list");
-  const entries = knowledge.entries || [];
+  const entries = knowledge.items || (Array.isArray(knowledge.entries) ? knowledge.entries : []);
   if (!entries.length) {
     knowledgeList.innerHTML = "<p class='muted'>尚無同步資料，請先提交訓練樣本</p>";
   } else {
