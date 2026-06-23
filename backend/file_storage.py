@@ -48,7 +48,7 @@ async def save_upload(file: UploadFile, folder: str) -> Path:
     if r2_enabled():
         key = f"{folder}/{filename}"
         await put_object(key, body, _guess_content_type(filename))
-        temp = Path(tempfile.gettempdir()) / f"agri-{filename}"
+        temp = Path(tempfile.gettempdir()) / filename
         temp.write_bytes(body)
         return temp
 
@@ -70,7 +70,13 @@ async def read_image_bytes(image_path: str) -> bytes | None:
         return local.read_bytes()
 
     if r2_enabled():
-        return await get_object(to_r2_key(image_path))
+        key = to_r2_key(image_path)
+        data = await get_object(key)
+        if data is None and "/agri-" in key:
+            # 相容舊版：R2 用 uuid 檔名，DB 卻記成 agri-uuid
+            legacy_key = key.replace("/agri-", "/", 1)
+            data = await get_object(legacy_key)
+        return data
     return None
 
 
