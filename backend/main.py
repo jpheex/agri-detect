@@ -45,7 +45,12 @@ from backend.offline_router import router as offline_router
 from backend.weather_scheduler import run_weather_alert_job, start_weather_scheduler
 from backend.push_notifier import push_configured
 from backend.storage import assess_storage_persistence
-from backend.cloudflare_config import cloudflare_storage_enabled, d1_enabled, r2_enabled
+from backend.cloudflare_config import (
+    cloudflare_env_status,
+    cloudflare_storage_enabled,
+    d1_enabled,
+    r2_enabled,
+)
 from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
     image_vector,
@@ -123,6 +128,7 @@ async def health():
             "d1": d1_enabled(),
             "r2": r2_enabled(),
             "persistent": cloudflare_storage_enabled(),
+            "env_set": cloudflare_env_status(),
         },
     }
 
