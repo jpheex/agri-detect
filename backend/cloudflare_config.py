@@ -23,7 +23,9 @@ def r2_enabled() -> bool:
 
 
 def cloudflare_storage_enabled() -> bool:
-    return d1_enabled() and r2_enabled()
+    from backend.db_connection import use_d1
+
+    return use_d1() and r2_enabled()
 
 
 def cloudflare_env_status() -> dict[str, bool]:

@@ -51,6 +51,7 @@ from backend.cloudflare_config import (
     d1_enabled,
     r2_enabled,
 )
+from backend.db_connection import use_d1
 from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
     image_vector,
@@ -125,7 +126,8 @@ async def health():
         "gemini": is_configured(),
         "storage": storage,
         "cloudflare": {
-            "d1": d1_enabled(),
+            "d1": use_d1(),
+            "d1_env": d1_enabled(),
             "r2": r2_enabled(),
             "persistent": cloudflare_storage_enabled(),
             "env_set": cloudflare_env_status(),
