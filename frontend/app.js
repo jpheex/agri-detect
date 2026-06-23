@@ -283,8 +283,13 @@ function upsertLocalKnowledge(crop, issueType, issueName, treatment, prevention,
   writeLocal(LS_KNOWLEDGE, entries);
 }
 
-function addLocalIndex(entry) {
-  const items = readLocal(LS_INDEX);
+function addLocalIndex(entry, replace = false) {
+  let items = readLocal(LS_INDEX);
+  if (replace) {
+    items = items.filter(
+      (item) => !(item.source_type === entry.source_type && item.source_id === entry.source_id)
+    );
+  }
   items.unshift(entry);
   writeLocal(LS_INDEX, items);
 }
@@ -658,7 +663,7 @@ function renderCorrectionForm(data) {
   return `
     <div class="correction-panel" id="correction-panel">
       <h4>辨識錯誤 — 手動更正</h4>
-      <p class="muted">修正後會更新結果並同步至知識庫，下次上傳相似照片會優先比對。</p>
+      <p class="muted">修正後會永久保存：舊的錯誤判斷進入錯誤知識庫，正確答案加入群眾知識庫，累積越多辨識越準。</p>
       <form id="correction-form">
         <label for="corr-crop">正確品種</label>
         <input id="corr-crop" name="crop" value="${escapeHtml(data.crop)}" required />
@@ -734,7 +739,7 @@ async function submitCorrection(recordId, formData) {
   await syncLocalCorrected(updated);
 
   return {
-    message: "已更正並同步知識庫（本機模式）",
+    message: "已永久記錄：錯誤判斷已記住，正確答案已加入群眾知識庫（本機模式）",
     ...updated,
   };
 }
@@ -749,16 +754,43 @@ async function syncLocalCorrected(record) {
     record.prevention,
     "manual_correction"
   );
-  addLocalIndex({
-    source_type: "corrected",
-    source_id: record.id,
-    image_url: record.image_url,
-    image_vector: vector,
-    crop: record.crop,
-    issue_type: record.issue_type,
-    issue_name: record.issue_name,
-    treatment: record.treatment,
-    prevention: record.prevention,
+  addLocalIndex(
+    {
+      source_type: "corrected",
+      source_id: record.id,
+      image_url: record.image_url,
+      image_vector: vector,
+      crop: record.crop,
+      issue_type: record.issue_type,
+      issue_name: record.issue_name,
+      treatment: record.treatment,
+      prevention: record.prevention,
+    },
+    true
+  );
+}
+
+function bindCorrectionForm(recordId, slot, { onSuccess, onCancel } = {}) {
+  slot.querySelector("#cancel-correction")?.addEventListener("click", () => {
+    slot.innerHTML = "";
+    onCancel?.();
+  });
+
+  slot.querySelector("#correction-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = slot.querySelector("#correction-error");
+    errEl.textContent = "";
+    try {
+      const formData = new FormData(e.target);
+      const result = await submitCorrection(recordId, formData);
+      alert(
+        result.message ||
+          "已永久記錄：錯誤判斷已記住，正確答案已加入群眾知識庫"
+      );
+      onSuccess?.(result);
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
   });
 }
 
@@ -770,25 +802,12 @@ function bindIdentifyPanelEvents() {
   showBtn.addEventListener("click", () => {
     slot.innerHTML = renderCorrectionForm(lastIdentifyData);
     showBtn.classList.add("hidden");
-
-    document.getElementById("cancel-correction")?.addEventListener("click", () => {
-      slot.innerHTML = "";
-      showBtn.classList.remove("hidden");
-    });
-
-    document.getElementById("correction-form")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const errEl = document.getElementById("correction-error");
-      errEl.textContent = "";
-      try {
-        const formData = new FormData(e.target);
-        const result = await submitCorrection(lastIdentifyData.id, formData);
+    bindCorrectionForm(lastIdentifyData.id, slot, {
+      onSuccess: (result) => {
         lastIdentifyData = { ...lastIdentifyData, ...result, id: lastIdentifyData.id };
         identifyResult.innerHTML = renderIdentifyPanel(lastIdentifyData, true);
-        alert(result.message || "已更正並同步知識庫");
-      } catch (err) {
-        errEl.textContent = err.message;
-      }
+      },
+      onCancel: () => showBtn.classList.remove("hidden"),
     });
   });
 }
@@ -1449,7 +1468,8 @@ async function loadVerifyPanel() {
     <div class="stat-box"><strong>${stats.incorrect}</strong>錯誤</div>
     <div class="stat-box"><strong>${stats.accuracy ?? "-"}${stats.accuracy != null ? "%" : ""}</strong>準確率</div>
     <div class="stat-box"><strong>${stats.entries ?? 0}</strong>知識類別</div>
-    <div class="stat-box"><strong>${stats.indexed_images ?? 0}</strong>參考影像</div>`;
+    <div class="stat-box"><strong>${stats.indexed_images ?? 0}</strong>參考影像</div>
+    <div class="stat-box"><strong>${stats.rejections ?? 0}</strong>錯誤記憶</div>`;
 
     if (!items.length) {
       listEl.innerHTML = "<p class='muted'>尚無辨識紀錄</p>";
@@ -1462,29 +1482,49 @@ async function loadVerifyPanel() {
           item.verified === 1
             ? "<span class='muted'>已標記：正確（已同步知識庫）</span>"
             : item.verified === 0
-              ? "<span class='muted'>已標記：錯誤</span>"
+              ? "<span class='muted'>已標記：錯誤（已記入錯誤知識庫）</span>"
               : `<div class="actions">
                 <button class="btn btn-ok" data-id="${item.id}" data-correct="true">正確</button>
                 <button class="btn btn-danger" data-id="${item.id}" data-correct="false">錯誤</button>
               </div>`;
+        const correctBtn =
+          item.verified !== 1
+            ? `<button class="btn btn-secondary btn-open-correct" data-id="${item.id}">提供正確答案</button>`
+            : "";
         return `
-        <div class="list-item">
+        <div class="list-item verify-item" data-id="${item.id}">
           <img src="${item.image_url}" alt="${item.crop}" />
           <div>
             <strong>${item.crop}</strong>
             <span class="badge ${badgeClass(item.issue_type)}">${item.issue_type}</span>
             <div>${item.issue_name} · 信心度 ${Math.round(item.confidence * 100)}%</div>
             <div class="muted">${item.created_at}</div>
+            <div class="verify-actions">${status} ${correctBtn}</div>
+            <div class="correction-slot-verify"></div>
           </div>
-          ${status}
         </div>`;
       })
       .join("");
 
-    listEl.querySelectorAll("button[data-id]").forEach((btn) => {
+    listEl.querySelectorAll("button[data-correct]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         await verifyRecord(Number(btn.dataset.id), btn.dataset.correct === "true");
         loadVerifyPanel();
+      });
+    });
+
+    listEl.querySelectorAll(".btn-open-correct").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const itemEl = btn.closest(".verify-item");
+        const recordId = Number(btn.dataset.id);
+        const record = items.find((item) => item.id === recordId);
+        const slot = itemEl?.querySelector(".correction-slot-verify");
+        if (!record || !slot) return;
+        slot.innerHTML = renderCorrectionForm(record);
+        bindCorrectionForm(recordId, slot, {
+          onSuccess: () => loadVerifyPanel(),
+          onCancel: () => loadVerifyPanel(),
+        });
       });
     });
   } catch (err) {

@@ -498,7 +498,10 @@ async def correct(
     meta = await get_knowledge_stats()
     return {
         "success": True,
-        "message": f"已更正並同步知識庫（共 {meta['entries']} 類、{meta['indexed_images']} 張參考圖）",
+        "message": (
+            f"已永久記錄：錯誤判斷已存入錯誤知識庫，正確答案已加入群眾知識庫"
+            f"（{meta['entries']} 類、{meta['indexed_images']} 張參考圖、{meta.get('rejections', 0)} 筆錯誤記憶）"
+        ),
         "crop": crop,
         "issue_type": issue_type,
         "issue_name": issue_name,

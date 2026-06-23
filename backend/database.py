@@ -179,6 +179,14 @@ async def add_knowledge_index(entry: dict) -> None:
     )
 
 
+async def replace_knowledge_index(entry: dict) -> None:
+    await execute(
+        "DELETE FROM knowledge_index WHERE source_type = ? AND source_id = ?",
+        (entry["source_type"], entry["source_id"]),
+    )
+    await add_knowledge_index(entry)
+
+
 async def list_knowledge_entries(limit: int = 200) -> list[dict]:
     return await fetchall(
         """

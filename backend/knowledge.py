@@ -9,6 +9,7 @@ from backend.database import (
     get_identification,
     list_identifications,
     list_knowledge_rejections,
+    replace_knowledge_index,
     upsert_knowledge_entry,
 )
 from backend.config import BASE_DIR
@@ -211,7 +212,7 @@ async def sync_verified_identification(record_id: int, base_dir: Path) -> None:
         prevention=record["prevention"],
         source="site_verified",
     )
-    await add_knowledge_index(
+    await replace_knowledge_index(
         {
             "source_type": "verified",
             "source_id": record_id,
@@ -255,7 +256,7 @@ async def sync_manual_correction(
         prevention=advice[1],
         source="manual_correction",
     )
-    await add_knowledge_index(
+    await replace_knowledge_index(
         {
             "source_type": "corrected",
             "source_id": record_id,
@@ -267,9 +268,6 @@ async def sync_manual_correction(
             "treatment": advice[0],
             "prevention": advice[1],
         }
-    )
-
-
     )
 
 
