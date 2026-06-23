@@ -51,7 +51,7 @@ from backend.cloudflare_config import (
     d1_enabled,
     r2_enabled,
 )
-from backend.db_connection import use_d1
+from backend.db_connection import diagnose_d1, use_d1
 from backend.file_storage import db_path_for_saved, read_file_response, save_upload as store_upload
 from backend.knowledge import (
     image_vector,
@@ -121,6 +121,7 @@ async def _save_upload(file: UploadFile, folder: str) -> Path:
 @app.get("/api/health")
 async def health():
     storage = assess_storage_persistence()
+    d1_error = None if use_d1() else await diagnose_d1()
     return {
         "status": "ok",
         "gemini": is_configured(),
@@ -131,6 +132,7 @@ async def health():
             "r2": r2_enabled(),
             "persistent": cloudflare_storage_enabled(),
             "env_set": cloudflare_env_status(),
+            "d1_error": d1_error,
         },
     }
 

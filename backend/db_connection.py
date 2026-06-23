@@ -61,6 +61,17 @@ async def _init_sqlite_schema() -> None:
         await db.commit()
 
 
+async def diagnose_d1() -> str | None:
+    """測試 D1 連線，失敗時回傳錯誤訊息（供 health 診斷）。"""
+    if not d1_enabled():
+        return None
+    try:
+        await get_d1_client().fetchone("SELECT 1 AS ok")
+        return None
+    except Exception as exc:
+        return str(exc)
+
+
 async def init_schema() -> None:
     global _d1_active
     _d1_active = False
